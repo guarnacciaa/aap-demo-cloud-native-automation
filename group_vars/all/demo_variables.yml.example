@@ -61,26 +61,6 @@ demo_project_scm_url: CHANGE_ME_GIT_REPO_URL
 demo_project_scm_branch: main
 
 # ============================================================================
-# Azure Automation settings
-# ============================================================================
-
-azure_subscription_id: CHANGE_ME
-azure_tenant_id: CHANGE_ME
-# azure_client_id and azure_client_secret are mapped from vault above.
-azure_automation_resource_group: CHANGE_ME
-azure_automation_account: CHANGE_ME
-# Name of the runbook created by playbooks/setup/01_azure_setup.yml.
-azure_runbook_name: aap-demo-runbook
-azure_runbook_description: AAP cloud-native automation demo runbook
-
-# --- Azure runbook schedule ---
-azure_job_schedule_name: poc-runbook-schedule
-# ISO 8601 UTC timestamp for the first scheduled execution.
-azure_schedule_start_time: "2026-06-15T02:00:00Z"
-azure_schedule_frequency: Hour
-azure_schedule_interval: 24
-
-# ============================================================================
 # AWS SSM settings
 # ============================================================================
 
@@ -99,6 +79,26 @@ aws_ssm_maintenance_task_name: aap-demo-ssm-task
 # Must have ssm:StartAutomationExecution and ec2:DescribeInstances permissions.
 aws_ssm_service_role_arn: arn:aws:iam::CHANGE_ME:role/SSMMaintenanceWindowRole
 aws_account_id: CHANGE_ME
+
+# ============================================================================
+# Azure Automation settings
+# ============================================================================
+
+azure_subscription_id: CHANGE_ME
+azure_tenant_id: CHANGE_ME
+# azure_client_id and azure_client_secret are mapped from vault above.
+azure_automation_resource_group: CHANGE_ME
+azure_automation_account: CHANGE_ME
+# Name of the runbook created by playbooks/setup/01_azure_setup.yml.
+azure_runbook_name: aap-demo-runbook
+azure_runbook_description: AAP cloud-native automation demo runbook
+
+# --- Azure runbook schedule ---
+azure_job_schedule_name: poc-runbook-schedule
+# ISO 8601 UTC timestamp for the first scheduled execution.
+azure_schedule_start_time: "2026-06-15T02:00:00Z"
+azure_schedule_frequency: Hour
+azure_schedule_interval: 24
 
 # ============================================================================
 # Optional email notification

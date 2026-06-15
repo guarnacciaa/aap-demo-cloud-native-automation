@@ -14,15 +14,15 @@
 vault_controller_username: CHANGE_ME
 vault_controller_password: CHANGE_ME
 
-# --- Azure Service Principal credentials ---
-# Required by 01_azure_setup.yml and the Azure credential in AAP.
-vault_azure_client_id: CHANGE_ME
-vault_azure_client_secret: CHANGE_ME
-
 # --- AWS IAM credentials ---
 # Required by 02_aws_setup.yml and the AWS credential in AAP.
 vault_aws_access_key: CHANGE_ME
 vault_aws_secret_key: CHANGE_ME
+
+# --- Azure Service Principal credentials ---
+# Required by 01_azure_setup.yml and the Azure credential in AAP.
+vault_azure_client_id: CHANGE_ME
+vault_azure_client_secret: CHANGE_ME
 
 # --- Optional email notification ---
 # Only required when enable_email_notification: true in demo_variables.yml.
