@@ -22,12 +22,15 @@
           - demo_project_scm_url != "CHANGE_ME_GIT_REPO_URL"
           - azure_automation_resource_group is defined
           - azure_automation_resource_group != "CHANGE_ME"
-          - aws_ssm_document_name is defined
-          - aws_ssm_document_name != "CHANGE_ME"
+          - azure_automation_account is defined
+          - azure_automation_account != "CHANGE_ME"
+          - aws_ssm_target_instance_id is defined
+          - aws_ssm_target_instance_id != "CHANGE_ME"
         fail_msg: >-
           Configure aap_hostname, demo_project_scm_url, azure_automation_resource_group,
-          and aws_ssm_document_name in demo_variables.yml and credentials in vault.yml
-          before running CasC.
+          azure_automation_account, and aws_ssm_target_instance_id in demo_variables.yml
+          and credentials in vault.yml before running CasC. Run setup playbooks first if
+          you have not already provisioned the Azure and AWS supporting resources.
 
   roles:
     # NOTE: infra.aap_configuration is validated content (not certified).

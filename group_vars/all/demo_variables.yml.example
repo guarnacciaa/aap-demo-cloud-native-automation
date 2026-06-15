@@ -110,7 +110,7 @@ enable_email_notification: false
 smtp_host: smtp.example.com
 smtp_port: 587
 smtp_username: notifier@example.com
-smtp_password: "{{ vault_smtp_password }}"
+# smtp_password is mapped from vault at the top of this file.
 notification_to: ops@example.com
 
 # ============================================================================
