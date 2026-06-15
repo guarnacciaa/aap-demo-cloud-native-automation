@@ -1,0 +1,11 @@
+---
+controller_groups:
+  - name: azure_automation
+    inventory: Azure-Resources
+    hosts:
+      - azure-automation-anchor
+
+  - name: aws_automation
+    inventory: AWS-Resources
+    hosts:
+      - "{{ aws_ssm_target_instance_id }}"

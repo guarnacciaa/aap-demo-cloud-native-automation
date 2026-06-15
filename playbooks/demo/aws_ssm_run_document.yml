@@ -1,0 +1,84 @@
+# Description: Execute AWS SSM Automation document via AWS CLI and collect outputs.
+# No certified SSM execution module is indexed; aws cli is used intentionally.
+---
+- name: Run AWS SSM Automation document and collect output
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - ansible.builtin
+
+  vars:
+    aws_region: "{{ aws_region | default('us-east-1') }}"
+    aws_ssm_document_name: "{{ aws_ssm_document_name | mandatory }}"
+    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | mandatory }}"
+
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ aws_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ aws_region }}"
+
+  tasks:
+    - name: Start SSM Automation execution for target instance
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm start-automation-execution
+          --document-name {{ aws_ssm_document_name }}
+          --parameters InstanceId={{ aws_ssm_target_instance_id }}
+          --region {{ aws_region }}
+          --output json
+      register: ssm_start
+      changed_when: true
+      tags:
+        - aws
+        - run
+
+    - name: Parse SSM automation execution ID
+      ansible.builtin.set_fact:
+        ssm_execution_id: "{{ (ssm_start.stdout | from_json).AutomationExecutionId }}"
+      tags:
+        - aws
+        - run
+
+    - name: Wait until SSM Automation execution reaches terminal state
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm get-automation-execution
+          --automation-execution-id {{ ssm_execution_id }}
+          --region {{ aws_region }}
+          --output json
+      register: ssm_status
+      until: (ssm_status.stdout | from_json).AutomationExecution.AutomationExecutionStatus in ['Success', 'Failed', 'Cancelled', 'TimedOut']
+      retries: 60
+      delay: 15
+      changed_when: false
+      tags:
+        - aws
+        - run
+
+    - name: Assert SSM Automation execution succeeded
+      ansible.builtin.assert:
+        that:
+          - (ssm_status.stdout | from_json).AutomationExecution.AutomationExecutionStatus == 'Success'
+        fail_msg: >-
+          SSM execution {{ ssm_execution_id }} finished with status
+          {{ (ssm_status.stdout | from_json).AutomationExecution.AutomationExecutionStatus }}.
+      tags:
+        - aws
+        - run
+
+    - name: Publish SSM execution results for workflow/email steps
+      ansible.builtin.set_stats:
+        data:
+          aws_ssm_execution_id: "{{ ssm_execution_id }}"
+          aws_ssm_status: "{{ (ssm_status.stdout | from_json).AutomationExecution.AutomationExecutionStatus }}"
+          aws_ssm_outputs: "{{ (ssm_status.stdout | from_json).AutomationExecution.Outputs | default({}) }}"
+      tags:
+        - aws
+        - collect
+
+    - name: Display SSM execution outputs
+      ansible.builtin.debug:
+        var: (ssm_status.stdout | from_json).AutomationExecution.Outputs
+      tags:
+        - aws
+        - collect

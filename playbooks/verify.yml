@@ -1,0 +1,34 @@
+# Description: Smoke-test prerequisites for cloud-native automation demo.
+---
+- name: Verify cloud native automation demo prerequisites
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - ansible.builtin
+
+  tasks:
+    - name: Confirm required variables are defined
+      ansible.builtin.assert:
+        that:
+          - azure_automation_account is defined
+          - azure_runbook_name is defined
+          - aws_ssm_document_name is defined
+        fail_msg: Copy demo_variables.yml.example to demo_variables.yml and set values.
+      tags:
+        - verify
+
+    - name: Confirm awscli is available when testing AWS path locally
+      ansible.builtin.command:
+        cmd: aws --version
+      changed_when: false
+      failed_when: false
+      register: awscli_check
+      tags:
+        - verify
+
+    - name: Report awscli availability
+      ansible.builtin.debug:
+        msg: >-
+          awscli {{ 'available' if awscli_check.rc == 0 else 'not found — required in EE for SSM playbooks' }}
+      tags:
+        - verify

@@ -1,0 +1,48 @@
+# Description: Optional email notification with automation output.
+# Uses community.general.mail — no Red Hat certified or validated SMTP module exists.
+# community.general is acceptable here given the optional, non-critical scope.
+# Gated by enable_email_notification=true; defaults to skipped in all job templates.
+---
+- name: Send email notification with automation results
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - community.general
+    - ansible.builtin
+
+  vars:
+    enable_email_notification: "{{ enable_email_notification | default(false) }}"
+
+  tasks:
+    - name: Skip email when notifications are disabled
+      ansible.builtin.meta: end_play
+      when: not (enable_email_notification | bool)
+      tags:
+        - notify
+
+    - name: Build notification body from workflow stats when available
+      ansible.builtin.set_fact:
+        notification_body: |
+          Automation PoC results
+          ----------------------
+          Azure runbook output:
+          {{ azure_runbook_output | default('N/A') }}
+
+          AWS SSM outputs:
+          {{ aws_ssm_outputs | default({}) | to_nice_json }}
+      tags:
+        - notify
+
+    - name: Send results email via SMTP
+      community.general.mail:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port | int }}"
+        username: "{{ smtp_username }}"
+        password: "{{ smtp_password }}"
+        to: "{{ notification_to }}"
+        subject: "AAP multicloud automation results"
+        body: "{{ notification_body }}"
+        secure: starttls
+      no_log: "{{ demo_no_log | default(true) }}"
+      tags:
+        - notify

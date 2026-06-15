@@ -1,0 +1,116 @@
+# Description: Start an Azure Automation runbook job via ARM REST API and collect output.
+# azure.azcollection has no runbook execution module; uri is used intentionally.
+---
+- name: Execute Azure Automation runbook and collect job output
+  hosts: localhost
+  gather_facts: true
+  collections:
+    - ansible.builtin
+
+  vars:
+    azure_subscription_id: "{{ azure_subscription_id | mandatory }}"
+    azure_tenant_id: "{{ azure_tenant_id | mandatory }}"
+    azure_client_id: "{{ azure_client_id | mandatory }}"
+    azure_client_secret: "{{ azure_client_secret | mandatory }}"
+    azure_automation_resource_group: "{{ azure_automation_resource_group | mandatory }}"
+    azure_automation_account: "{{ azure_automation_account | mandatory }}"
+    azure_runbook_name: "{{ azure_runbook_name | mandatory }}"
+    azure_arm_api_version: "2024-10-23"
+    azure_job_name: "aap-{{ azure_runbook_name }}-{{ ansible_date_time.epoch }}"
+
+  tasks:
+    - name: Obtain Azure AD access token for Resource Manager
+      ansible.builtin.uri:
+        url: "https://login.microsoftonline.com/{{ azure_tenant_id }}/oauth2/v2.0/token"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          grant_type: client_credentials
+          client_id: "{{ azure_client_id }}"
+          client_secret: "{{ azure_client_secret }}"
+          scope: https://management.azure.com/.default
+        status_code: 200
+      register: azure_token
+      no_log: "{{ demo_no_log | default(true) }}"
+      tags:
+        - azure
+        - auth
+
+    - name: Start Azure Automation runbook job
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobs/{{ azure_job_name }}?api-version={{ azure_arm_api_version }}
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          properties:
+            runbook:
+              name: "{{ azure_runbook_name }}"
+        status_code:
+          - 200
+          - 201
+      register: azure_job_create
+      tags:
+        - azure
+        - run
+
+    - name: Poll Azure Automation job until completion
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobs/{{ azure_job_name }}?api-version={{ azure_arm_api_version }}
+        method: GET
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+        status_code: 200
+      register: azure_job_status
+      until: azure_job_status.json.properties.status in ['Completed', 'Failed', 'Suspended', 'Stopped']
+      retries: 60
+      delay: 15
+      tags:
+        - azure
+        - run
+
+    - name: Assert Azure Automation job completed successfully
+      ansible.builtin.assert:
+        that:
+          - azure_job_status.json.properties.status == 'Completed'
+        fail_msg: >-
+          Runbook job {{ azure_job_name }} finished with status
+          {{ azure_job_status.json.properties.status }}.
+      tags:
+        - azure
+        - run
+
+    - name: Fetch Azure Automation job output stream
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobs/{{ azure_job_name }}/output?api-version={{ azure_arm_api_version }}
+        method: GET
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+        return_content: true
+        status_code: 200
+      register: azure_job_output
+      tags:
+        - azure
+        - collect
+
+    - name: Publish Azure runbook results for workflow/email steps
+      ansible.builtin.set_stats:
+        data:
+          azure_runbook_job_name: "{{ azure_job_name }}"
+          azure_runbook_status: "{{ azure_job_status.json.properties.status }}"
+          azure_runbook_output: "{{ azure_job_output.content }}"
+      tags:
+        - azure
+        - collect
+
+    - name: Display Azure runbook output
+      ansible.builtin.debug:
+        msg: "{{ azure_job_output.content }}"
+      tags:
+        - azure
+        - collect

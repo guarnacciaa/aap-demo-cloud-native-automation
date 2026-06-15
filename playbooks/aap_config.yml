@@ -1,0 +1,41 @@
+# Description: Apply AAP Configuration as Code for the cloud-native-automation demo.
+# Run from the artifact root after copying demo_variables.yml.example and vault.yml.
+# Safe to re-run; infra.aap_configuration dispatch reconciles desired state.
+---
+- name: Apply cloud native automation demo configuration to AAP
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - infra.aap_configuration
+    - ansible.builtin
+  vars_files:
+    - ../vault.yml
+    - ../group_vars/all/demo_variables.yml
+
+  pre_tasks:
+    - name: Validate required variables before applying CasC
+      ansible.builtin.assert:
+        that:
+          - aap_hostname is defined
+          - aap_hostname != "CHANGE_ME"
+          - demo_project_scm_url is defined
+          - demo_project_scm_url != "CHANGE_ME_GIT_REPO_URL"
+          - azure_automation_resource_group is defined
+          - azure_automation_resource_group != "CHANGE_ME"
+          - aws_ssm_document_name is defined
+          - aws_ssm_document_name != "CHANGE_ME"
+        fail_msg: >-
+          Configure aap_hostname, demo_project_scm_url, azure_automation_resource_group,
+          and aws_ssm_document_name in demo_variables.yml and credentials in vault.yml
+          before running CasC.
+
+  roles:
+    # NOTE: infra.aap_configuration is validated content (not certified).
+    - role: infra.aap_configuration.dispatch
+      tags:
+        - all
+        - organizations
+        - credentials
+        - inventories
+        - job_templates
+        - workflow_job_templates

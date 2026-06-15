@@ -1,0 +1,15 @@
+---
+controller_inventories:
+  - name: "{{ demo_inventory_name }}"
+    organization: "{{ demo_organization_name }}"
+    description: Parent inventory for multicloud native automation
+
+  - name: Azure-Resources
+    organization: "{{ demo_organization_name }}"
+    description: Azure Automation runbook metadata
+    inventory: "{{ demo_inventory_name }}"
+
+  - name: AWS-Resources
+    organization: "{{ demo_organization_name }}"
+    description: AWS SSM automation targets
+    inventory: "{{ demo_inventory_name }}"

@@ -1,0 +1,109 @@
+# ============================================================================
+# DEMO CONFIGURATION VARIABLES (EXAMPLE)
+# ============================================================================
+# Copy to demo_variables.yml and edit for your environment.
+# demo_variables.yml is gitignored so it is not overwritten on git pull.
+# ============================================================================
+
+demo_no_log: false
+# Unmask errors from infra.aap_configuration roles (credentials, etc.).
+# Set to true in production to hide secrets from job output.
+aap_configuration_secure_logging: false
+
+# --- AAP connection ---
+# controller_username and controller_password live in vault.yml.
+# The dispatch role resolves gateway auth from aap_* -> controller_* fallback.
+aap_hostname: CHANGE_ME
+aap_username: "{{ controller_username }}"
+aap_password: "{{ controller_password }}"
+aap_validate_certs: false
+
+# Controller REST API path prefix when calling through Platform Gateway (AAP 2.5+).
+# Do not use legacy /api/v2/ on the gateway hostname.
+aap_controller_api_prefix: /api/controller/v2
+
+demo_organization_name: Multicloud Demo
+demo_organization_description: Azure Runbook and AWS SSM automation PoC
+demo_project_name: Cloud Native Automation Demo
+demo_label_name: cloud-native-automation
+demo_inventory_name: Demo-Multicloud
+demo_execution_environment_name: ee-cloud-native-automation
+
+# ============================================================================
+# Git repository configuration
+# ============================================================================
+# Choose ONE of the following options based on your Git hosting platform:
+#
+# OPTION A: GitHub
+#   demo_project_scm_url: https://github.com/YOUR_USERNAME/aap-demo-cloud-native-automation.git
+#
+# OPTION B: Gitea (self-hosted)
+#   demo_project_scm_url: https://your-gitea.example.com/YOUR_USERNAME/aap-demo-cloud-native-automation.git
+#
+# OPTION C: GitLab
+#   demo_project_scm_url: https://gitlab.com/YOUR_USERNAME/aap-demo-cloud-native-automation.git
+# ============================================================================
+
+demo_project_scm_url: CHANGE_ME_GIT_REPO_URL
+demo_project_scm_branch: main
+
+# ============================================================================
+# Azure Automation settings
+# ============================================================================
+
+azure_subscription_id: CHANGE_ME
+azure_tenant_id: CHANGE_ME
+# azure_client_id and azure_client_secret are injected by the Azure Service Principal
+# credential type. Map from vault to avoid storing them in plain text.
+azure_client_id: "{{ vault_azure_client_id | default('CHANGE_ME') }}"
+azure_client_secret: "{{ vault_azure_client_secret }}"
+azure_automation_resource_group: CHANGE_ME
+azure_automation_account: CHANGE_ME
+azure_runbook_name: CHANGE_ME
+
+# --- Azure runbook schedule ---
+azure_job_schedule_name: poc-runbook-schedule
+# ISO 8601 UTC timestamp for the first scheduled execution.
+azure_schedule_start_time: "2026-06-15T02:00:00Z"
+azure_schedule_frequency: Hour
+azure_schedule_interval: 24
+
+# ============================================================================
+# AWS SSM settings
+# ============================================================================
+
+aws_region: us-east-1
+# aws_access_key and aws_secret_key are injected by the AWS IAM User credential type.
+# Map from vault to avoid storing them in plain text.
+aws_access_key: "{{ vault_aws_access_key | default('CHANGE_ME') }}"
+aws_secret_key: "{{ vault_aws_secret_key }}"
+aws_ssm_document_name: CHANGE_ME
+aws_ssm_target_instance_id: CHANGE_ME
+
+# --- AWS SSM maintenance window ---
+aws_ssm_maintenance_window_id: CHANGE_ME
+aws_ssm_maintenance_task_name: poc-ssm-task
+# IAM role ARN that SSM uses to execute the maintenance window task.
+# Must have ssm:StartAutomationExecution and ec2:DescribeInstances permissions.
+aws_ssm_service_role_arn: arn:aws:iam::CHANGE_ME:role/SSMMaintenanceWindowRole
+aws_account_id: CHANGE_ME
+
+# ============================================================================
+# Optional email notification
+# ============================================================================
+# Requires community.general collection (no certified SMTP module available).
+# Set enable_email_notification: true and configure SMTP details below.
+
+enable_email_notification: false
+smtp_host: smtp.example.com
+smtp_port: 587
+smtp_username: notifier@example.com
+smtp_password: "{{ vault_smtp_password }}"
+notification_to: ops@example.com
+
+# ============================================================================
+# Credential names (must match credentials.yml)
+# ============================================================================
+
+azure_credential_name: Azure Service Principal
+aws_credential_name: AWS IAM User

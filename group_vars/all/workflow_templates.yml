@@ -1,0 +1,69 @@
+---
+controller_workflows:
+  - name: WF - Azure Runbook execute and collect
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    labels:
+      - "{{ demo_label_name }}"
+    workflow_nodes:
+      - identifier: run_runbook
+        unified_job_template:
+          organization:
+            name: "{{ demo_organization_name }}"
+          name: Azure - Run Runbook and collect output
+      - identifier: notify
+        unified_job_template:
+          organization:
+            name: "{{ demo_organization_name }}"
+          name: Notify - Email automation results
+        related:
+          - identifier: run_runbook
+            type: success
+
+  - name: WF - Azure Runbook schedule
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    labels:
+      - "{{ demo_label_name }}"
+    workflow_nodes:
+      - identifier: schedule_runbook
+        unified_job_template:
+          organization:
+            name: "{{ demo_organization_name }}"
+          name: Azure - Schedule Runbook
+
+  - name: WF - AWS SSM document execute and collect
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    labels:
+      - "{{ demo_label_name }}"
+    workflow_nodes:
+      - identifier: run_ssm
+        unified_job_template:
+          organization:
+            name: "{{ demo_organization_name }}"
+          name: AWS - Run SSM document and collect output
+      - identifier: notify
+        unified_job_template:
+          organization:
+            name: "{{ demo_organization_name }}"
+          name: Notify - Email automation results
+        related:
+          - identifier: run_ssm
+            type: success
+
+  - name: WF - AWS SSM schedule via maintenance window
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    labels:
+      - "{{ demo_label_name }}"
+    workflow_nodes:
+      - identifier: schedule_ssm
+        unified_job_template:
+          organization:
+            name: "{{ demo_organization_name }}"
+          name: AWS - Schedule SSM via maintenance window

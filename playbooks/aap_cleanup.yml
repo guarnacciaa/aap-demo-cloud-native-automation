@@ -1,0 +1,28 @@
+# Description: Remove AAP objects created by the cloud-native automation demo.
+---
+- name: Confirm cloud native automation demo cleanup
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - ansible.builtin
+  tasks:
+    - name: Require demo_cleanup_confirm=true before removing AAP objects
+      ansible.builtin.assert:
+        that:
+          - demo_cleanup_confirm | default(false) | bool
+        fail_msg: Pass -e demo_cleanup_confirm=true to run cleanup.
+      tags:
+        - always
+
+- name: Remove cloud native automation demo configuration from AAP
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - infra.aap_configuration
+    - ansible.builtin
+  vars_files:
+    - ../group_vars/all/demo_variables.yml
+  vars:
+    platform_state: absent
+  roles:
+    - role: infra.aap_configuration.dispatch

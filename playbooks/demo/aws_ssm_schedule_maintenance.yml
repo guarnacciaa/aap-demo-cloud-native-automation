@@ -1,0 +1,51 @@
+# Description: Register SSM Automation task with an existing maintenance window.
+# Customer must pre-create the maintenance window and IAM permissions.
+---
+- name: Schedule AWS SSM Automation via maintenance window
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - ansible.builtin
+
+  vars:
+    aws_region: "{{ aws_region | default('us-east-1') }}"
+    aws_ssm_document_name: "{{ aws_ssm_document_name | mandatory }}"
+    aws_ssm_maintenance_window_id: "{{ aws_ssm_maintenance_window_id | mandatory }}"
+    aws_ssm_maintenance_task_name: "{{ aws_ssm_maintenance_task_name | mandatory }}"
+    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | mandatory }}"
+
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ aws_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ aws_region }}"
+
+  tasks:
+    - name: Register SSM Automation task with maintenance window
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm register-task-with-maintenance-window
+          --window-id {{ aws_ssm_maintenance_window_id }}
+          --task-type AUTOMATION
+          --name {{ aws_ssm_maintenance_task_name }}
+          --task-arn arn:aws:ssm:{{ aws_region }}:{{ aws_account_id | default('*') }}:automation-definition/{{ aws_ssm_document_name }}
+          --service-role-arn {{ aws_ssm_service_role_arn | mandatory }}
+          --targets Key=InstanceIds,Values={{ aws_ssm_target_instance_id }}
+          --max-concurrency 1
+          --max-errors 0
+          --priority 1
+          --region {{ aws_region }}
+          --output json
+      register: ssm_mw_task
+      changed_when: true
+      tags:
+        - aws
+        - schedule
+
+    - name: Publish maintenance window task registration result
+      ansible.builtin.set_stats:
+        data:
+          aws_ssm_maintenance_window_id: "{{ aws_ssm_maintenance_window_id }}"
+          aws_ssm_maintenance_task: "{{ (ssm_mw_task.stdout | from_json).WindowTaskId | default('registered') }}"
+      tags:
+        - aws
+        - schedule
