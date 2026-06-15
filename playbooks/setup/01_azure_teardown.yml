@@ -1,0 +1,70 @@
+# Description: Delete the sample Azure Automation runbook created by 01_azure_setup.yml.
+# Requires demo_cleanup_confirm=true to prevent accidental deletion.
+# Run after aap_cleanup.yml has removed the Controller objects.
+---
+- name: Remove sample Azure Automation runbook
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - ansible.builtin
+  vars_files:
+    - ../../vault.yml
+    - ../../group_vars/all/demo_variables.yml
+
+  vars:
+    azure_arm_api_version: "2024-10-23"
+
+  pre_tasks:
+    - name: Require demo_cleanup_confirm=true before deleting Azure runbook
+      ansible.builtin.assert:
+        that:
+          - demo_cleanup_confirm | default(false) | bool
+        fail_msg: Pass -e demo_cleanup_confirm=true to run Azure teardown.
+      tags:
+        - always
+
+  tasks:
+    - name: Obtain Azure AD access token for Resource Manager
+      ansible.builtin.uri:
+        url: "https://login.microsoftonline.com/{{ azure_tenant_id }}/oauth2/v2.0/token"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          grant_type: client_credentials
+          client_id: "{{ azure_client_id }}"
+          client_secret: "{{ azure_client_secret }}"
+          scope: https://management.azure.com/.default
+        status_code: 200
+      register: azure_token
+      no_log: "{{ demo_no_log | default(true) }}"
+      tags:
+        - azure
+        - auth
+
+    - name: Delete sample runbook from Automation Account
+      # 404 is acceptable — runbook may already be gone or was never created.
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account
+          }}/runbooks/{{ azure_runbook_name }}?api-version={{ azure_arm_api_version }}
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+        status_code:
+          - 200
+          - 204
+          - 404
+      tags:
+        - azure
+        - teardown
+
+    - name: Report Azure teardown completion
+      ansible.builtin.debug:
+        msg: >-
+          Runbook '{{ azure_runbook_name }}' removed from '{{ azure_automation_account }}'.
+          The Automation Account itself was not deleted.
+      tags:
+        - azure
+        - teardown

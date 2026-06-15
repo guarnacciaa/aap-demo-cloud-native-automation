@@ -1,5 +1,8 @@
 ---
+vault_controller_username: CHANGE_ME
 vault_controller_password: CHANGE_ME
+vault_azure_client_id: CHANGE_ME
 vault_azure_client_secret: CHANGE_ME
+vault_aws_access_key: CHANGE_ME
 vault_aws_secret_key: CHANGE_ME
 vault_smtp_password: CHANGE_ME

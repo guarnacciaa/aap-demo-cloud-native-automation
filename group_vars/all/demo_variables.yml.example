@@ -10,8 +10,21 @@ demo_no_log: false
 # Set to true in production to hide secrets from job output.
 aap_configuration_secure_logging: false
 
+# ============================================================================
+# Vault variable mappings
+# ============================================================================
+# Map vault_ prefixed secrets to the plain names used by roles and playbooks.
+# vault.yml must be copied from vault.yml.example and encrypted before use.
+controller_username: "{{ vault_controller_username }}"
+controller_password: "{{ vault_controller_password }}"
+azure_client_id: "{{ vault_azure_client_id }}"
+azure_client_secret: "{{ vault_azure_client_secret }}"
+aws_access_key: "{{ vault_aws_access_key }}"
+aws_secret_key: "{{ vault_aws_secret_key }}"
+smtp_password: "{{ vault_smtp_password }}"
+
 # --- AAP connection ---
-# controller_username and controller_password live in vault.yml.
+# controller_username and controller_password are mapped from vault above.
 # The dispatch role resolves gateway auth from aap_* -> controller_* fallback.
 aap_hostname: CHANGE_ME
 aap_username: "{{ controller_username }}"
@@ -53,13 +66,12 @@ demo_project_scm_branch: main
 
 azure_subscription_id: CHANGE_ME
 azure_tenant_id: CHANGE_ME
-# azure_client_id and azure_client_secret are injected by the Azure Service Principal
-# credential type. Map from vault to avoid storing them in plain text.
-azure_client_id: "{{ vault_azure_client_id | default('CHANGE_ME') }}"
-azure_client_secret: "{{ vault_azure_client_secret }}"
+# azure_client_id and azure_client_secret are mapped from vault above.
 azure_automation_resource_group: CHANGE_ME
 azure_automation_account: CHANGE_ME
-azure_runbook_name: CHANGE_ME
+# Name of the runbook created by playbooks/setup/01_azure_setup.yml.
+azure_runbook_name: aap-demo-runbook
+azure_runbook_description: AAP cloud-native automation demo runbook
 
 # --- Azure runbook schedule ---
 azure_job_schedule_name: poc-runbook-schedule
@@ -73,16 +85,16 @@ azure_schedule_interval: 24
 # ============================================================================
 
 aws_region: us-east-1
-# aws_access_key and aws_secret_key are injected by the AWS IAM User credential type.
-# Map from vault to avoid storing them in plain text.
-aws_access_key: "{{ vault_aws_access_key | default('CHANGE_ME') }}"
-aws_secret_key: "{{ vault_aws_secret_key }}"
-aws_ssm_document_name: CHANGE_ME
+# aws_access_key and aws_secret_key are mapped from vault above.
+# Name of the SSM Automation document created by playbooks/setup/02_aws_setup.yml.
+aws_ssm_document_name: aap-demo-ssm-document
+# Populated after running 02_aws_setup.yml — copy the printed EC2 instance ID here.
 aws_ssm_target_instance_id: CHANGE_ME
 
 # --- AWS SSM maintenance window ---
+# Populated after running 02_aws_setup.yml — copy the printed window ID here.
 aws_ssm_maintenance_window_id: CHANGE_ME
-aws_ssm_maintenance_task_name: poc-ssm-task
+aws_ssm_maintenance_task_name: aap-demo-ssm-task
 # IAM role ARN that SSM uses to execute the maintenance window task.
 # Must have ssm:StartAutomationExecution and ec2:DescribeInstances permissions.
 aws_ssm_service_role_arn: arn:aws:iam::CHANGE_ME:role/SSMMaintenanceWindowRole
@@ -107,3 +119,29 @@ notification_to: ops@example.com
 
 azure_credential_name: Azure Service Principal
 aws_credential_name: AWS IAM User
+
+# ============================================================================
+# Setup variables (used by playbooks/setup/*)
+# ============================================================================
+# These variables are consumed by the setup playbooks that provision supporting
+# infrastructure before the demo scenario can run. Run setup playbooks in order:
+#   01_azure_setup.yml → 02_aws_setup.yml → aap_config.yml
+
+# --- EC2 target instance (02_aws_setup.yml) ---
+# Use an Amazon Linux 2023 or RHEL AMI with SSM agent pre-installed.
+aws_ec2_instance_name: aap-demo-ssm-target
+aws_ec2_instance_type: t3.micro
+aws_ec2_ami_id: CHANGE_ME
+aws_ec2_vpc_subnet_id: CHANGE_ME
+# SSH key pair name — optional; omit (or leave CHANGE_ME) for SSM-only access.
+aws_ec2_key_name: CHANGE_ME
+aws_ec2_security_group_ids:
+  - CHANGE_ME
+# IAM instance profile that grants the EC2 instance AmazonSSMManagedInstanceCore.
+# Create this profile in IAM before running 02_aws_setup.yml.
+aws_ec2_iam_instance_profile: CHANGE_ME
+
+# --- AWS maintenance window (02_aws_setup.yml) ---
+demo_aws_maintenance_window_name: aap-demo-maintenance-window
+# Cron or rate expression; default: every Sunday at 02:00 UTC.
+demo_aws_maintenance_window_schedule: "cron(0 2 ? * SUN *)"

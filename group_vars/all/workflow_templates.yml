@@ -1,5 +1,62 @@
 ---
 controller_workflows:
+  # --------------------------------------------------------------------------
+  # Lifecycle: setup → demo → teardown
+  # --------------------------------------------------------------------------
+
+  - name: WF - Demo setup
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    description: >-
+      Provision supporting cloud resources in sequence:
+      Azure runbook → AWS SSM document, EC2 instance, maintenance window.
+      Run once before the demo scenario workflows.
+    labels:
+      - "{{ demo_label_name }}"
+    workflow_nodes:
+      - identifier: setup_azure
+        unified_job_template:
+          organization:
+            name: "{{ demo_organization_name }}"
+          name: Setup - Azure runbook
+      - identifier: setup_aws
+        unified_job_template:
+          organization:
+            name: "{{ demo_organization_name }}"
+          name: Setup - AWS SSM resources
+        related:
+          - identifier: setup_azure
+            type: success
+
+  - name: WF - Demo teardown
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    description: >-
+      Remove demo resources in sequence:
+      AAP Controller objects (aap_cleanup) → Azure runbook → AWS SSM resources.
+      Requires demo_cleanup_confirm=true passed as extra variable.
+    labels:
+      - "{{ demo_label_name }}"
+    workflow_nodes:
+      - identifier: teardown_azure
+        unified_job_template:
+          organization:
+            name: "{{ demo_organization_name }}"
+          name: Teardown - Azure runbook
+      - identifier: teardown_aws
+        unified_job_template:
+          organization:
+            name: "{{ demo_organization_name }}"
+          name: Teardown - AWS SSM resources
+        related:
+          - identifier: teardown_azure
+            type: success
+
+  # --------------------------------------------------------------------------
+  # Demo scenario workflows
+  # --------------------------------------------------------------------------
   - name: WF - Azure Runbook execute and collect
     organization: "{{ demo_organization_name }}"
     inventory: "{{ demo_inventory_name }}"

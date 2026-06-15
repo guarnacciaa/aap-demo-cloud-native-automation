@@ -36,6 +36,9 @@
         - all
         - organizations
         - credentials
+        - execution_environments
         - inventories
+        - projects
+        - labels
         - job_templates
         - workflow_job_templates

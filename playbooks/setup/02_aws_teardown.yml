@@ -1,0 +1,99 @@
+# Description: Remove AWS resources created by 02_aws_setup.yml.
+# Terminates the EC2 instance, deletes the SSM Automation document, and
+# deletes the maintenance window. Requires demo_cleanup_confirm=true.
+# Run after aap_cleanup.yml has removed the Controller objects.
+---
+- name: Remove AWS supporting resources for cloud-native automation demo
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - amazon.aws
+    - ansible.builtin
+  vars_files:
+    - ../../vault.yml
+    - ../../group_vars/all/demo_variables.yml
+
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ aws_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ aws_region }}"
+
+  pre_tasks:
+    - name: Require demo_cleanup_confirm=true before removing AWS resources
+      ansible.builtin.assert:
+        that:
+          - demo_cleanup_confirm | default(false) | bool
+        fail_msg: Pass -e demo_cleanup_confirm=true to run AWS teardown.
+      tags:
+        - always
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # 1. Maintenance window
+    # -------------------------------------------------------------------------
+
+    - name: Delete maintenance window
+      # --reason flag is not supported on all CLI versions; omitted for compatibility.
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm delete-maintenance-window
+          --window-id {{ aws_ssm_maintenance_window_id }}
+          --region {{ aws_region }}
+          --output json
+      register: mw_delete
+      changed_when: mw_delete.rc == 0
+      # DoesNotExistException means already deleted — acceptable.
+      failed_when:
+        - mw_delete.rc != 0
+        - "'DoesNotExistException' not in mw_delete.stderr"
+      when: aws_ssm_maintenance_window_id != "CHANGE_ME"
+      tags:
+        - aws
+        - maintenance-window
+
+    # -------------------------------------------------------------------------
+    # 2. EC2 instance
+    # -------------------------------------------------------------------------
+
+    - name: Terminate EC2 instance by name tag
+      # Terminate by name tag so the playbook does not require the instance ID
+      # to be current after manual changes to demo_variables.yml.
+      amazon.aws.ec2_instance:
+        filters:
+          "tag:Name": "{{ aws_ec2_instance_name }}"
+          "tag:demo": cloud-native-automation
+        state: terminated
+        wait: true
+      tags:
+        - aws
+        - ec2
+
+    # -------------------------------------------------------------------------
+    # 3. SSM Automation document
+    # -------------------------------------------------------------------------
+
+    - name: Delete SSM Automation document
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm delete-document
+          --name {{ aws_ssm_document_name }}
+          --region {{ aws_region }}
+          --output json
+      register: ssm_doc_delete
+      changed_when: ssm_doc_delete.rc == 0
+      failed_when:
+        - ssm_doc_delete.rc != 0
+        - "'InvalidDocument' not in ssm_doc_delete.stderr"
+      tags:
+        - aws
+        - ssm
+
+    - name: Report AWS teardown completion
+      ansible.builtin.debug:
+        msg: >-
+          AWS resources removed: EC2 instance '{{ aws_ec2_instance_name }}',
+          SSM document '{{ aws_ssm_document_name }}',
+          maintenance window '{{ aws_ssm_maintenance_window_id }}'.
+      tags:
+        - aws
+        - teardown

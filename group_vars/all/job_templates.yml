@@ -1,5 +1,68 @@
 ---
 controller_templates:
+  # --------------------------------------------------------------------------
+  # Setup templates — provision supporting cloud resources before the demo
+  # --------------------------------------------------------------------------
+
+  - name: Setup - Azure runbook
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    playbook: playbooks/setup/01_azure_setup.yml
+    execution_environment: "{{ demo_execution_environment_name }}"
+    credentials:
+      - "{{ azure_credential_name }}"
+    ask_variables_on_launch: true
+    labels:
+      - "{{ demo_label_name }}"
+
+  - name: Setup - AWS SSM resources
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    playbook: playbooks/setup/02_aws_setup.yml
+    execution_environment: "{{ demo_execution_environment_name }}"
+    credentials:
+      - "{{ aws_credential_name }}"
+    ask_variables_on_launch: true
+    labels:
+      - "{{ demo_label_name }}"
+
+  # --------------------------------------------------------------------------
+  # Teardown templates — remove supporting cloud resources after the demo
+  # --------------------------------------------------------------------------
+
+  - name: Teardown - Azure runbook
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    playbook: playbooks/setup/01_azure_teardown.yml
+    execution_environment: "{{ demo_execution_environment_name }}"
+    credentials:
+      - "{{ azure_credential_name }}"
+    ask_variables_on_launch: true
+    extra_vars:
+      demo_cleanup_confirm: false
+    labels:
+      - "{{ demo_label_name }}"
+
+  - name: Teardown - AWS SSM resources
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    playbook: playbooks/setup/02_aws_teardown.yml
+    execution_environment: "{{ demo_execution_environment_name }}"
+    credentials:
+      - "{{ aws_credential_name }}"
+    ask_variables_on_launch: true
+    extra_vars:
+      demo_cleanup_confirm: false
+    labels:
+      - "{{ demo_label_name }}"
+
+  # --------------------------------------------------------------------------
+  # Demo scenario templates
+  # --------------------------------------------------------------------------
   - name: Azure - Run Runbook and collect output
     organization: "{{ demo_organization_name }}"
     inventory: "{{ demo_inventory_name }}"

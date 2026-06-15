@@ -8,16 +8,21 @@
 
 ## Introduction
 
-Orchestrates **pre-existing** Azure Automation Runbooks and **AWS Systems Manager Automation documents** from AAP (Use Case 3): immediate execution, scheduling, output collection, and optional email notification.
+Orchestrates Azure Automation Runbooks and AWS Systems Manager Automation documents
+from AAP: immediate execution, scheduling, output collection, and optional email
+notification. Setup playbooks provision all required cloud resources — no manual
+cloud console steps are needed.
 
 ## How to run the demo
 
-| Workflow | Purpose |
-|---|---|
-| WF - Azure Runbook execute and collect | Run runbook → optional email |
-| WF - Azure Runbook schedule | Create job schedule |
-| WF - AWS SSM document execute and collect | Run SSM document → optional email |
-| WF - AWS SSM schedule via maintenance window | Register maintenance window task |
+| Phase | Workflow / playbook | Purpose |
+|---|---|---|
+| 1. Setup | `WF - Demo setup` | Provision Azure runbook, EC2 instance, SSM document, maintenance window |
+| 2. Azure scenario | `WF - Azure Runbook execute and collect` | Run runbook and collect output |
+| 2. Azure scenario | `WF - Azure Runbook schedule` | Create recurring runbook schedule |
+| 2. AWS scenario | `WF - AWS SSM document execute and collect` | Run SSM document on EC2 target |
+| 2. AWS scenario | `WF - AWS SSM schedule via maintenance window` | Register scheduled SSM task |
+| 3. Teardown | `WF - Demo teardown` | Remove all demo resources |
 
 ## Quick start
 
@@ -26,75 +31,159 @@ cd artifacts/demos/aap-demo-cloud-native-automation
 ansible-galaxy collection install -r collections/requirements.yml -p collections
 cp ansible.cfg.example ansible.cfg
 cp group_vars/all/demo_variables.yml.example group_vars/all/demo_variables.yml
+cp vault.yml.example vault.yml && ansible-vault encrypt vault.yml
+```
+
+Edit `demo_variables.yml` and `vault.yml` with your environment values,
+then run the setup playbooks in order:
+
+```bash
+ansible-playbook playbooks/setup/01_azure_setup.yml --vault-id @prompt
+ansible-playbook playbooks/setup/02_aws_setup.yml --vault-id @prompt
+```
+
+After `02_aws_setup.yml` prints the EC2 instance ID and maintenance window ID,
+copy those values into `demo_variables.yml`, then apply CasC:
+
+```bash
 ansible-playbook playbooks/aap_config.yml --vault-id @prompt
 ```
 
-See [docs/setup.md](docs/setup.md) for EE build and API prerequisites.
+See [docs/setup.md](docs/setup.md) for full step-by-step instructions and EE
+build guidance.
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  subgraph aap [AAP]
-    WFA[WF_Azure_Runbook]
-    WFS[WF_AWS_SSM]
-  end
-
-  subgraph azure [Azure_Automation]
-    RB[Runbook]
-  end
-
-  subgraph aws [AWS_SSM]
-    DOC[Automation_document]
-    EC2[EC2_target]
-  end
-
-  WFA -->|ARM_REST| RB
-  WFS -->|aws_cli| DOC --> EC2
+```
++---------------------------------------------------------------+
+|  AAP Controller                                               |
+|                                                               |
+|  WF - Azure Runbook          WF - AWS SSM document            |
+|  execute and collect         execute and collect              |
+|        |                           |                          |
+|  [Azure - Run Runbook]       [AWS - Run SSM document]         |
+|        |                           |                          |
+|  [Notify - Email] (opt)      [Notify - Email] (opt)           |
++--------|---------------------------|---------------------------+
+         |  ARM REST                 |  aws ssm CLI
+         v                           v
++--------------------+     +------------------------------+
+|  Azure Automation  |     |  AWS Systems Manager         |
+|  Account           |     |                              |
+|  Runbook           |     |  Automation document         |
+|  (01_azure_setup)  |     |  EC2 instance  (02_aws_setup)|
++--------------------+     +------------------------------+
 ```
 
-## REST/CLI design note
-
-Certified collections do not expose runbook execution or SSM Automation run modules in this PoC scope. Playbooks use:
-
-- `ansible.builtin.uri` for Azure Resource Manager job and schedule APIs
-- `aws ssm` CLI for automation execution and maintenance windows
-
-Document this constraint to customers reviewing support implications.
-
-## Multicloud inventory UX (UC4)
+## Repository structure
 
 ```
-Demo-Multicloud
-├── Azure-Resources
-│   └── azure_automation
-└── AWS-Resources
-    └── aws_automation
+playbooks/
+  aap_config.yml          Apply CasC
+  aap_cleanup.yml         Remove Controller objects
+  verify.yml              Smoke test prerequisites
+  setup/
+    01_azure_setup.yml    Create Azure runbook
+    01_azure_teardown.yml Delete Azure runbook
+    02_aws_setup.yml      Create SSM document, EC2 instance, maintenance window
+    02_aws_teardown.yml   Remove AWS resources
+  demo/
+    azure_runbook_run.yml
+    azure_runbook_schedule.yml
+    aws_ssm_run_document.yml
+    aws_ssm_schedule_maintenance.yml
+    notify_results.yml
+group_vars/all/
+  demo_variables.yml.example
+  organizations.yml, credentials.yml, inventories.yml, projects.yml
+  execution_environments.yml, labels.yml
+  job_templates.yml, workflow_templates.yml
+context/
+  execution-environment.yml   Custom EE with awscli
+docs/
+  setup.md, procedures.md, testing.md, verification.md
 ```
 
-Same parent/child naming is used across all three PoC artifacts for a consistent AAP navigation experience.
+## Prerequisites
+
+- Azure Automation Account with an Azure service principal granted
+  Automation Contributor on the resource group.
+- AWS IAM user with `ssm:*`, `ec2:*`, and maintenance window permissions.
+- AWS IAM instance profile with `AmazonSSMManagedInstanceCore` for the EC2 target.
+- Existing VPC, subnet, and security group in the target AWS region.
 
 ## Job templates
 
 | Template | Playbook |
 |---|---|
-| Azure - Run Runbook and collect output | `azure_runbook_run.yml` |
-| Azure - Schedule Runbook | `azure_runbook_schedule.yml` |
-| AWS - Run SSM document and collect output | `aws_ssm_run_document.yml` |
-| AWS - Schedule SSM via maintenance window | `aws_ssm_schedule_maintenance.yml` |
-| Notify - Email automation results | `notify_results.yml` (optional) |
+| Setup - Azure runbook | `setup/01_azure_setup.yml` |
+| Setup - AWS SSM resources | `setup/02_aws_setup.yml` |
+| Teardown - Azure runbook | `setup/01_azure_teardown.yml` |
+| Teardown - AWS SSM resources | `setup/02_aws_teardown.yml` |
+| Azure - Run Runbook and collect output | `demo/azure_runbook_run.yml` |
+| Azure - Schedule Runbook | `demo/azure_runbook_schedule.yml` |
+| AWS - Run SSM document and collect output | `demo/aws_ssm_run_document.yml` |
+| AWS - Schedule SSM via maintenance window | `demo/aws_ssm_schedule_maintenance.yml` |
+| Notify - Email automation results | `demo/notify_results.yml` (optional) |
 
 ## Collections
 
 | Collection | Tier | Purpose |
 |---|---|---|
-| infra.aap_configuration | validated | CasC |
-| azure.azcollection | certified | Azure auth context |
-| amazon.aws | certified | AWS credential patterns |
-| community.general | community | Optional SMTP email |
+| infra.aap_configuration | validated | CasC dispatch |
+| azure.azcollection | certified | Azure authentication context |
+| amazon.aws | certified | EC2 instance provisioning |
+| community.general | community | Optional SMTP notification (no certified module) |
+
+## REST/CLI design note
+
+`azure.azcollection` does not expose runbook execution, content upload, or
+publishing actions. `azure.azcollection` is used only for authentication context;
+all Azure Automation operations use `ansible.builtin.uri` against the ARM REST API
+directly. This constraint is documented in each affected playbook.
+
+`amazon.aws` has no certified SSM Automation execution or maintenance window task
+module. All SSM operations use the `aws` CLI embedded in the custom EE.
+
+Document both constraints to customers reviewing support implications.
+
+## Multicloud inventory structure
+
+```
+Demo-Multicloud
+  Azure-Resources
+    azure_automation  (group)
+      azure-automation-anchor
+  AWS-Resources
+    aws_automation    (group)
+      <ec2-instance-id>
+```
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `aap_config.yml` fails on assert | `aap_hostname` or `demo_project_scm_url` still `CHANGE_ME` | Edit `demo_variables.yml` |
+| Azure ARM returns 403 | SP not granted Automation Contributor | Assign role in Azure portal or via CLI |
+| SSM execution times out | SSM agent not registered on EC2 | Check instance profile; `02_aws_setup.yml` waits for registration |
+| `aws ssm create-document` fails with `DocumentAlreadyExists` | Document name already used | Delete manually (`aws ssm delete-document --name ...`) or change `aws_ssm_document_name` |
+| Email notification skipped | `enable_email_notification` is `false` (default) | Set to `true` and configure SMTP variables |
+
+## Reset
+
+```bash
+ansible-playbook playbooks/aap_cleanup.yml -e demo_cleanup_confirm=true --vault-id @prompt
+ansible-playbook playbooks/setup/01_azure_teardown.yml -e demo_cleanup_confirm=true --vault-id @prompt
+ansible-playbook playbooks/setup/02_aws_teardown.yml -e demo_cleanup_confirm=true --vault-id @prompt
+```
 
 ## References
 
-- Microsoft Azure Automation REST API
-- AWS Systems Manager Automation documentation
-- Red Hat AAP 2.6 documentation
+- [Azure Automation REST API](https://learn.microsoft.com/en-us/rest/api/automation/)
+- [AWS Systems Manager Automation documentation](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-automation.html)
+- [infra.aap_configuration collection](https://github.com/redhat-cop/aap_configuration)
+- [Red Hat AAP 2.6 documentation](https://access.redhat.com/documentation/en-us/red_hat_ansible_automation_platform/2.6)
+
+## License
+
+Apache 2.0

@@ -1,0 +1,212 @@
+# Description: Create AWS supporting resources for the cloud-native automation demo.
+# Creates: SSM Automation document, EC2 instance with SSM agent, maintenance window.
+# Run before aap_config.yml. Teardown counterpart: 02_aws_teardown.yml
+#
+# Prerequisites:
+#   - aws_ec2_iam_instance_profile must reference an IAM instance profile with
+#     the AmazonSSMManagedInstanceCore policy (enables SSM agent registration).
+#   - aws_ec2_ami_id must be an Amazon Linux 2023 or RHEL AMI with SSM agent pre-installed.
+#
+# After this playbook completes:
+#   1. Copy the printed EC2 instance ID into aws_ssm_target_instance_id in demo_variables.yml.
+#   2. Copy the printed maintenance window ID into aws_ssm_maintenance_window_id.
+---
+- name: Create AWS SSM resources for cloud-native automation demo
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - amazon.aws
+    - ansible.builtin
+  vars_files:
+    - ../../vault.yml
+    - ../../group_vars/all/demo_variables.yml
+
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ aws_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_key }}"
+    AWS_DEFAULT_REGION: "{{ aws_region }}"
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # 1. SSM Automation document
+    # -------------------------------------------------------------------------
+
+    - name: Write SSM Automation document content to a temporary file
+      # Writing to a file avoids shell quoting problems with inline JSON.
+      # The document runs a simple shell script on the target EC2 instance
+      # via aws:runCommand — valid for demonstrating SSM execution and output.
+      ansible.builtin.copy:
+        dest: /tmp/aap-demo-ssm-document.json
+        mode: "0600"
+        content: |
+          {
+            "schemaVersion": "0.3",
+            "description": "AAP cloud-native automation demo: run diagnostics on EC2 target",
+            "parameters": {
+              "InstanceId": {
+                "type": "String",
+                "description": "Target EC2 instance ID"
+              }
+            },
+            "mainSteps": [
+              {
+                "name": "runDiagnostics",
+                "action": "aws:runCommand",
+                "inputs": {
+                  "DocumentName": "AWS-RunShellScript",
+                  "InstanceIds": ["{{ '{{' }} InstanceId {{ '}}' }}"],
+                  "Parameters": {
+                    "commands": [
+                      "echo 'AAP cloud-native automation demo executed at: '$(date -u)",
+                      "hostname",
+                      "uptime",
+                      "echo 'SSM agent version: '$(amazon-ssm-agent -version 2>/dev/null || ssm-agent -version 2>/dev/null || echo unknown)"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+      tags:
+        - aws
+        - ssm
+
+    - name: Create SSM Automation document
+      # aws ssm create-document fails with DuplicateDocumentContent when the document
+      # already exists with identical content — treated as success (idempotent).
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm create-document
+          --name {{ aws_ssm_document_name }}
+          --document-type Automation
+          --document-format JSON
+          --content file:///tmp/aap-demo-ssm-document.json
+          --region {{ aws_region }}
+          --output json
+      register: ssm_doc_create
+      changed_when: ssm_doc_create.rc == 0
+      failed_when:
+        - ssm_doc_create.rc != 0
+        - "'DocumentAlreadyExists' not in ssm_doc_create.stderr"
+        - "'DuplicateDocumentContent' not in ssm_doc_create.stderr"
+      tags:
+        - aws
+        - ssm
+
+    - name: Remove temporary SSM document file
+      ansible.builtin.file:
+        path: /tmp/aap-demo-ssm-document.json
+        state: absent
+      tags:
+        - aws
+        - ssm
+
+    # -------------------------------------------------------------------------
+    # 2. EC2 target instance
+    # -------------------------------------------------------------------------
+
+    - name: Launch EC2 instance as SSM automation target
+      # amazon.aws.ec2_instance is certified; preferred over community.aws alternatives.
+      # The instance must join the SSM managed-instance inventory via its IAM profile.
+      amazon.aws.ec2_instance:
+        name: "{{ aws_ec2_instance_name }}"
+        instance_type: "{{ aws_ec2_instance_type }}"
+        image_id: "{{ aws_ec2_ami_id }}"
+        vpc_subnet_id: "{{ aws_ec2_vpc_subnet_id }}"
+        key_name: "{{ aws_ec2_key_name | default(omit) }}"
+        security_groups: "{{ aws_ec2_security_group_ids }}"
+        iam_instance_profile: "{{ aws_ec2_iam_instance_profile }}"
+        state: running
+        wait: true
+        tags:
+          Name: "{{ aws_ec2_instance_name }}"
+          demo: cloud-native-automation
+          managed_by: ansible
+      register: ec2_result
+      tags:
+        - aws
+        - ec2
+
+    - name: Store EC2 instance ID
+      ansible.builtin.set_fact:
+        provisioned_instance_id: "{{ ec2_result.instances[0].instance_id }}"
+      tags:
+        - aws
+        - ec2
+
+    - name: Wait for SSM agent to register the instance
+      # The SSM agent registers asynchronously after boot — poll until the instance
+      # appears in SSM managed-instance inventory before proceeding.
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm describe-instance-information
+          --filters Key=InstanceIds,Values={{ provisioned_instance_id }}
+          --region {{ aws_region }}
+          --output json
+      register: ssm_agent_check
+      until: (ssm_agent_check.stdout | from_json).InstanceInformationList | length > 0
+      retries: 20
+      delay: 30
+      changed_when: false
+      tags:
+        - aws
+        - ec2
+
+    # -------------------------------------------------------------------------
+    # 3. Maintenance window
+    # -------------------------------------------------------------------------
+
+    - name: Create AWS maintenance window for scheduled SSM tasks
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm create-maintenance-window
+          --name {{ demo_aws_maintenance_window_name }}
+          --schedule "{{ demo_aws_maintenance_window_schedule }}"
+          --duration 2
+          --cutoff 1
+          --allow-unassociated-targets
+          --region {{ aws_region }}
+          --output json
+      register: mw_create
+      changed_when: true
+      # IdempotentParameterMismatch means a window with this name already exists.
+      failed_when:
+        - mw_create.rc != 0
+        - "'IdempotentParameterMismatch' not in mw_create.stderr"
+        - "'already exists' not in mw_create.stderr"
+      tags:
+        - aws
+        - maintenance-window
+
+    - name: Store maintenance window ID
+      ansible.builtin.set_fact:
+        provisioned_window_id: >-
+          {{ (mw_create.stdout | from_json).WindowId
+          if mw_create.rc == 0
+          else 'already-exists-check-aws-console' }}
+      tags:
+        - aws
+        - maintenance-window
+
+    # -------------------------------------------------------------------------
+    # 4. Output — operator must update demo_variables.yml with these values
+    # -------------------------------------------------------------------------
+
+    - name: Save setup outputs for workflow chaining
+      ansible.builtin.set_stats:
+        data:
+          aws_ec2_instance_id: "{{ provisioned_instance_id }}"
+          aws_maintenance_window_id: "{{ provisioned_window_id }}"
+      tags:
+        - aws
+        - setup
+
+    - name: Report required manual steps after setup
+      ansible.builtin.debug:
+        msg:
+          - "EC2 instance ID : {{ provisioned_instance_id }}"
+          - "Maintenance window ID: {{ provisioned_window_id }}"
+          - "ACTION REQUIRED: update aws_ssm_target_instance_id and aws_ssm_maintenance_window_id in demo_variables.yml, then re-run aap_config.yml."
+      tags:
+        - aws
+        - setup

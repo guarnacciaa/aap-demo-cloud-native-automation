@@ -1,0 +1,145 @@
+# Description: Create and publish the sample Azure Automation runbook required by the demo.
+# Run before aap_config.yml. The Automation Account and service principal must already
+# exist with Automation Contributor role granted to the SP on the resource group.
+# Teardown counterpart: 01_azure_teardown.yml
+# Safe to re-run; ARM PUT for runbook creation is idempotent.
+---
+- name: Create and publish sample Azure Automation runbook
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - ansible.builtin
+  vars_files:
+    - ../../vault.yml
+    - ../../group_vars/all/demo_variables.yml
+
+  vars:
+    azure_arm_api_version: "2024-10-23"
+    # Sample PowerShell runbook body deployed into the automation account.
+    # The runbook writes a timestamped greeting — sufficient to demonstrate
+    # runbook execution and output collection without customer-specific logic.
+    demo_runbook_content: |
+      param(
+          [string]$Message = "Hello from AAP cloud-native automation demo!"
+      )
+      Write-Output $Message
+      Write-Output "Executed at: $([datetime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')) UTC"
+
+  tasks:
+    - name: Obtain Azure AD access token for Resource Manager
+      ansible.builtin.uri:
+        url: "https://login.microsoftonline.com/{{ azure_tenant_id }}/oauth2/v2.0/token"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          grant_type: client_credentials
+          client_id: "{{ azure_client_id }}"
+          client_secret: "{{ azure_client_secret }}"
+          scope: https://management.azure.com/.default
+        status_code: 200
+      register: azure_token
+      no_log: "{{ demo_no_log | default(true) }}"
+      tags:
+        - azure
+        - auth
+
+    # Retrieve the Automation Account to resolve its Azure region.
+    # The runbook resource must share the same location as its parent account.
+    - name: Retrieve Automation Account metadata to resolve region
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account
+          }}?api-version={{ azure_arm_api_version }}
+        method: GET
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+        status_code: 200
+      register: automation_account
+      tags:
+        - azure
+        - setup
+
+    - name: Set automation account location fact
+      ansible.builtin.set_fact:
+        azure_automation_location: "{{ automation_account.json.location }}"
+      tags:
+        - azure
+        - setup
+
+    - name: Create runbook object in draft state
+      # azure.azcollection does not expose runbook content upload or publish actions;
+      # ARM REST PUT is used directly here and in the demo playbooks for consistency.
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account
+          }}/runbooks/{{ azure_runbook_name }}?api-version={{ azure_arm_api_version }}
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          location: "{{ azure_automation_location }}"
+          properties:
+            runbookType: PowerShell
+            description: "{{ azure_runbook_description | default('AAP cloud-native automation demo runbook') }}"
+            logVerboseEnabled: false
+            logProgressEnabled: false
+        status_code:
+          - 200
+          - 201
+      register: runbook_create
+      tags:
+        - azure
+        - setup
+
+    - name: Upload PowerShell content to runbook draft
+      # Separate PUT to the /draft/content endpoint is required before publishing.
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account
+          }}/runbooks/{{ azure_runbook_name }}/draft/content?api-version={{ azure_arm_api_version }}
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+          Content-Type: text/powershell
+        body: "{{ demo_runbook_content }}"
+        status_code:
+          - 200
+          - 202
+      tags:
+        - azure
+        - setup
+
+    - name: Publish runbook to make it executable
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account
+          }}/runbooks/{{ azure_runbook_name }}/publish?api-version={{ azure_arm_api_version }}
+        method: POST
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+        status_code:
+          - 200
+          - 202
+      tags:
+        - azure
+        - setup
+
+    - name: Report Azure setup completion
+      ansible.builtin.debug:
+        msg: >-
+          Runbook '{{ azure_runbook_name }}' created and published in
+          '{{ azure_automation_account }}' ({{ azure_automation_resource_group }}).
+          Run aap_config.yml next, then launch the Azure demo workflows from the Controller UI.
+      tags:
+        - azure
+        - setup

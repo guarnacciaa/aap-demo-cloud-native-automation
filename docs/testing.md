@@ -26,12 +26,16 @@ Tracks testing progress for this demo. Update after each session. For procedural
 |---|---|---|---|
 | Azure-Resources (source) | Not tested | — | |
 | AWS-Resources (source) | Not tested | — | |
-| Demo-Cloud-Native (constructed) | Not tested | — | |
+| Demo-Multicloud (parent) | Not tested | — | |
 
 ### Job templates
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
+| Setup - Azure runbook | Not tested | — | |
+| Setup - AWS SSM resources | Not tested | — | |
+| Teardown - Azure runbook | Not tested | — | |
+| Teardown - AWS SSM resources | Not tested | — | |
 | Azure - Run Runbook and collect output | Not tested | — | |
 | Azure - Schedule Runbook | Not tested | — | |
 | AWS - Run SSM document and collect output | Not tested | — | |
@@ -42,6 +46,8 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
+| WF - Demo setup | Not tested | — | |
+| WF - Demo teardown | Not tested | — | |
 | WF - Azure Runbook execute and collect | Not tested | — | |
 | WF - Azure Runbook schedule | Not tested | — | |
 | WF - AWS SSM document execute and collect | Not tested | — | |
