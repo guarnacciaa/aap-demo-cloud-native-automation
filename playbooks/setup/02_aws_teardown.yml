@@ -2,6 +2,12 @@
 # Terminates the EC2 instance, deletes the SSM Automation document, and
 # deletes the maintenance window. Requires demo_cleanup_confirm=true.
 # Run after aap_cleanup.yml has removed the Controller objects.
+#
+# When aws_create_network_resources: true, also removes the IAM role, instance
+# profile, security group, subnets, route tables, internet gateway, and VPC
+# that were provisioned by 02_aws_setup.yml. When false, only the EC2 instance,
+# SSM document, and maintenance window are removed (the pre-existing network
+# and IAM objects are left untouched).
 ---
 - name: Remove AWS supporting resources for cloud-native automation demo
   hosts: localhost
@@ -28,9 +34,9 @@
         - always
 
   tasks:
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # 1. Maintenance window
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     - name: Delete maintenance window
       # --reason flag is not supported on all CLI versions; omitted for compatibility.
@@ -51,9 +57,9 @@
         - aws
         - maintenance-window
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # 2. EC2 instance
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     - name: Terminate EC2 instance by name tag
       # Terminate by name tag so the playbook does not require the instance ID
@@ -68,9 +74,9 @@
         - aws
         - ec2
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # 3. SSM Automation document
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     - name: Delete SSM Automation document
       ansible.builtin.command:
@@ -88,12 +94,154 @@
         - aws
         - ssm
 
+    # =========================================================================
+    # 4. Conditional: remove network and IAM resources created from scratch
+    #    Skipped entirely when aws_create_network_resources is false.
+    # =========================================================================
+
+    - name: Delete IAM role and instance profile created by 02_aws_setup.yml
+      # delete_instance_profile: true removes the instance profile that was
+      # automatically created alongside the role (create_instance_profile: true
+      # in the setup playbook). The role cannot be deleted while a profile
+      # still references it, so this order is correct.
+      amazon.aws.iam_role:
+        name: "{{ aws_iam_role_name }}"
+        delete_instance_profile: true
+        state: absent
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - iam
+
+    # Look up the VPC by name and demo tag so downstream resource deletions have
+    # the VPC ID even if it was never stored in a variable.
+    - name: Look up demo VPC by name tag
+      amazon.aws.ec2_vpc_net_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:Name": "{{ aws_vpc_name }}"
+          "tag:demo": cloud-native-automation
+      register: aws_vpc_lookup
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - network
+
+    - name: Set VPC ID fact for teardown (skip if VPC not found)
+      # If the VPC was already deleted or never created, set an empty string so
+      # all subsequent network tasks are skipped via their `when` condition.
+      ansible.builtin.set_fact:
+        teardown_vpc_id: "{{ aws_vpc_lookup.vpcs[0].id | default('') }}"
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - network
+
+    - name: Delete security group from the demo VPC
+      amazon.aws.ec2_security_group:
+        name: "{{ aws_sg_name }}"
+        region: "{{ aws_region }}"
+        vpc_id: "{{ teardown_vpc_id }}"
+        state: absent
+      when:
+        - aws_create_network_resources | default(false) | bool
+        - teardown_vpc_id | default('') | length > 0
+      tags:
+        - aws
+        - network
+
+    - name: Look up demo subnets in the VPC
+      amazon.aws.ec2_vpc_subnet_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ teardown_vpc_id }}"
+          "tag:demo": cloud-native-automation
+      register: aws_subnet_lookup
+      when:
+        - aws_create_network_resources | default(false) | bool
+        - teardown_vpc_id | default('') | length > 0
+      tags:
+        - aws
+        - network
+
+    - name: Delete demo subnets
+      amazon.aws.ec2_vpc_subnet:
+        region: "{{ aws_region }}"
+        vpc_id: "{{ teardown_vpc_id }}"
+        cidr: "{{ item.cidr_block }}"
+        state: absent
+      loop: "{{ aws_subnet_lookup.subnets | default([]) }}"
+      when:
+        - aws_create_network_resources | default(false) | bool
+        - teardown_vpc_id | default('') | length > 0
+      tags:
+        - aws
+        - network
+
+    - name: Look up route tables associated with the demo VPC
+      amazon.aws.ec2_vpc_route_table_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ teardown_vpc_id }}"
+          "tag:demo": cloud-native-automation
+      register: aws_rt_lookup
+      when:
+        - aws_create_network_resources | default(false) | bool
+        - teardown_vpc_id | default('') | length > 0
+      tags:
+        - aws
+        - network
+
+    - name: Delete custom route tables from the demo VPC
+      # Only delete custom route tables; the VPC main route table is removed
+      # automatically when the VPC itself is deleted.
+      amazon.aws.ec2_vpc_route_table:
+        region: "{{ aws_region }}"
+        vpc_id: "{{ teardown_vpc_id }}"
+        route_table_id: "{{ item.id }}"
+        lookup: id
+        state: absent
+      loop: "{{ aws_rt_lookup.route_tables | default([]) }}"
+      when:
+        - aws_create_network_resources | default(false) | bool
+        - teardown_vpc_id | default('') | length > 0
+        - not (item.associations | default([]) | selectattr('main', 'defined') | selectattr('main') | list | length > 0)
+      tags:
+        - aws
+        - network
+
+    - name: Delete internet gateway from the demo VPC
+      amazon.aws.ec2_vpc_igw:
+        vpc_id: "{{ teardown_vpc_id }}"
+        region: "{{ aws_region }}"
+        state: absent
+      when:
+        - aws_create_network_resources | default(false) | bool
+        - teardown_vpc_id | default('') | length > 0
+      tags:
+        - aws
+        - network
+
+    - name: Delete the demo VPC
+      amazon.aws.ec2_vpc_net:
+        name: "{{ aws_vpc_name }}"
+        cidr_block: "{{ aws_vpc_cidr }}"
+        region: "{{ aws_region }}"
+        state: absent
+      when:
+        - aws_create_network_resources | default(false) | bool
+        - teardown_vpc_id | default('') | length > 0
+      tags:
+        - aws
+        - network
+
     - name: Report AWS teardown completion
       ansible.builtin.debug:
         msg: >-
           AWS resources removed: EC2 instance '{{ aws_ec2_instance_name }}',
           SSM document '{{ aws_ssm_document_name }}',
           maintenance window '{{ aws_ssm_maintenance_window_id }}'.
+          {{ 'VPC, subnet, security group, internet gateway, route tables, IAM role, and instance profile also removed.' if (aws_create_network_resources | default(false) | bool) else 'Pre-existing network and IAM resources were not modified.' }}
       tags:
         - aws
         - teardown

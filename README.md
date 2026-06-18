@@ -108,9 +108,14 @@ docs/
 
 - Azure Automation Account with an Azure service principal granted
   Automation Contributor on the resource group.
-- AWS IAM user with `ssm:*`, `ec2:*`, and maintenance window permissions.
-- AWS IAM instance profile with `AmazonSSMManagedInstanceCore` for the EC2 target.
-- Existing VPC, subnet, and security group in the target AWS region.
+- AWS IAM user with `ssm:*`, `ec2:*`, `iam:*`, and maintenance window permissions.
+- AWS EC2 networking and IAM instance profile — two modes are supported:
+  - **Bring-your-own** (default): supply IDs for a pre-existing VPC subnet,
+    security group, and IAM instance profile with `AmazonSSMManagedInstanceCore`.
+  - **Create from scratch**: set `aws_create_network_resources: true` in
+    `demo_variables.yml`; `02_aws_setup.yml` creates the VPC, subnet, internet
+    gateway, route table, security group, IAM role, and instance profile.
+    The teardown playbook removes all of these objects.
 
 ## Job templates
 

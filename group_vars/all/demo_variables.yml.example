@@ -78,6 +78,8 @@ aws_ssm_maintenance_task_name: aap-demo-ssm-task
 # IAM role ARN that SSM uses to execute the maintenance window task.
 # Must have ssm:StartAutomationExecution and ec2:DescribeInstances permissions.
 aws_ssm_service_role_arn: arn:aws:iam::CHANGE_ME:role/SSMMaintenanceWindowRole
+# 12-digit AWS account ID — used to build the SSM automation-definition ARN.
+# Retrieve it with: aws sts get-caller-identity --query Account --output text
 aws_account_id: CHANGE_ME
 
 # ============================================================================
@@ -127,19 +129,43 @@ aws_credential_name: AWS IAM User
 # infrastructure before the demo scenario can run. Run setup playbooks in order:
 #   01_azure_setup.yml → 02_aws_setup.yml → aap_config.yml
 
+# --- EC2 networking and IAM mode ---
+# false (default): supply IDs for pre-existing resources in the bring-your-own
+#                  section below. No VPC or IAM objects are created.
+# true:            02_aws_setup.yml creates a VPC, subnet, internet gateway,
+#                  route table, security group, IAM role, and instance profile
+#                  from scratch. Use this when no suitable network exists yet.
+aws_create_network_resources: false
+
 # --- EC2 target instance (02_aws_setup.yml) ---
 # Use an Amazon Linux 2023 or RHEL AMI with SSM agent pre-installed.
 aws_ec2_instance_name: aap-demo-ssm-target
 aws_ec2_instance_type: t3.micro
 aws_ec2_ami_id: CHANGE_ME
-aws_ec2_vpc_subnet_id: CHANGE_ME
 # SSH key pair name — optional; omit (or leave CHANGE_ME) for SSM-only access.
 aws_ec2_key_name: CHANGE_ME
+
+# --- Bring-your-own network (aws_create_network_resources: false) ---
+# Supply IDs for pre-existing resources. These variables are ignored when
+# aws_create_network_resources is set to true.
+aws_ec2_vpc_subnet_id: CHANGE_ME
 aws_ec2_security_group_ids:
   - CHANGE_ME
 # IAM instance profile that grants the EC2 instance AmazonSSMManagedInstanceCore.
 # Create this profile in IAM before running 02_aws_setup.yml.
 aws_ec2_iam_instance_profile: CHANGE_ME
+
+# --- Create-from-scratch network (aws_create_network_resources: true) ---
+# Names and CIDR blocks for resources provisioned by 02_aws_setup.yml.
+# Safe to leave as-is; customize only if the defaults conflict with your environment.
+# Teardown counterpart (02_aws_teardown.yml) removes all resources created here.
+aws_vpc_name: aap-demo-cna-vpc
+aws_vpc_cidr: "10.0.0.0/16"
+aws_subnet_name: aap-demo-cna-subnet
+aws_subnet_cidr: "10.0.1.0/24"
+aws_sg_name: aap-demo-cna-sg
+# IAM role and instance profile created by 02_aws_setup.yml (profile name = role name).
+aws_iam_role_name: aap-demo-ssm-instance-role
 
 # --- AWS maintenance window (02_aws_setup.yml) ---
 demo_aws_maintenance_window_name: aap-demo-maintenance-window

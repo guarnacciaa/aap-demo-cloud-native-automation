@@ -2,12 +2,12 @@
 
 ## Requirements
 
-| Component | Version |
+| Component | Version / Notes |
 |---|---|
 | Red Hat Ansible Automation Platform | 2.6+ |
 | Azure Automation Account | Existing account; runbook is created by setup playbook |
-| AWS IAM user | `ssm:*`, `ec2:*`, `ssm:CreateMaintenanceWindow` permissions |
-| AWS IAM instance profile | `AmazonSSMManagedInstanceCore` attached |
+| AWS IAM user | `ssm:*`, `ec2:*`, `iam:*`, `ssm:CreateMaintenanceWindow` permissions |
+| AWS networking and IAM instance profile | Bring-your-own **or** created from scratch — see below |
 | Network | Outbound HTTPS from AAP to Azure Management API and AWS API endpoints |
 
 ## Supporting dependencies
@@ -33,6 +33,46 @@ ansible-galaxy collection install -r collections/requirements.yml -p collections
 cp ansible.cfg.example ansible.cfg
 ```
 
+## AWS networking and IAM mode
+
+`02_aws_setup.yml` supports two modes, selected by `aws_create_network_resources` in
+`demo_variables.yml`:
+
+### Bring-your-own (default: `aws_create_network_resources: false`)
+
+Use this mode when a suitable VPC, subnet, and security group already exist in your
+AWS account. You must also have an IAM instance profile with the
+`AmazonSSMManagedInstanceCore` policy attached.
+
+Set the following variables to the IDs of the pre-existing resources:
+
+```yaml
+aws_ec2_vpc_subnet_id: subnet-xxxxxxxxxxxxxxxxx
+aws_ec2_security_group_ids:
+  - sg-xxxxxxxxxxxxxxxxx
+aws_ec2_iam_instance_profile: MyExistingInstanceProfile
+```
+
+`02_aws_teardown.yml` removes only the EC2 instance, SSM document, and maintenance
+window. It does not touch the pre-existing network or IAM objects.
+
+### Create from scratch (`aws_create_network_resources: true`)
+
+Use this mode when no suitable network exists or when you want the demo to be fully
+self-contained. `02_aws_setup.yml` creates:
+
+- VPC (`aws_vpc_name` / `aws_vpc_cidr`)
+- Subnet (`aws_subnet_name` / `aws_subnet_cidr`), public, with internet gateway and route table
+- Security group (`aws_sg_name`) — no inbound rules; all outbound allowed for SSM agent
+- IAM role and instance profile (`aws_iam_role_name`) with `AmazonSSMManagedInstanceCore`
+
+The IAM user running the playbook needs `iam:CreateRole`, `iam:AttachRolePolicy`,
+`iam:CreateInstanceProfile`, `iam:AddRoleToInstanceProfile`, and related `iam:*`
+permissions in addition to `ec2:*` and `ssm:*`.
+
+`02_aws_teardown.yml` removes all of the above objects in addition to the EC2 instance,
+SSM document, and maintenance window.
+
 ## Step 2 — Configure variables and vault
 
 ```bash
@@ -48,8 +88,11 @@ Edit `group_vars/all/demo_variables.yml` and set at minimum:
 - `azure_automation_resource_group`, `azure_automation_account`
 - `aws_region`, `aws_account_id`
 - `aws_ec2_ami_id` — Amazon Linux 2023 or RHEL AMI in your region
-- `aws_ec2_vpc_subnet_id`, `aws_ec2_security_group_ids`
-- `aws_ec2_iam_instance_profile` — IAM instance profile with `AmazonSSMManagedInstanceCore`
+- `aws_create_network_resources` — `false` (default) to use pre-existing resources,
+  `true` to have `02_aws_setup.yml` create the network and IAM profile from scratch
+  (see [AWS networking and IAM mode](#aws-networking-and-iam-mode) above)
+- When `aws_create_network_resources: false`: `aws_ec2_vpc_subnet_id`,
+  `aws_ec2_security_group_ids`, `aws_ec2_iam_instance_profile`
 - `demo_project_scm_url`
 
 Edit `vault.yml` (after encrypting) and set:

@@ -2,10 +2,12 @@
 # Creates: SSM Automation document, EC2 instance with SSM agent, maintenance window.
 # Run before aap_config.yml. Teardown counterpart: 02_aws_teardown.yml
 #
-# Prerequisites:
-#   - aws_ec2_iam_instance_profile must reference an IAM instance profile with
-#     the AmazonSSMManagedInstanceCore policy (enables SSM agent registration).
-#   - aws_ec2_ami_id must be an Amazon Linux 2023 or RHEL AMI with SSM agent pre-installed.
+# Two modes controlled by aws_create_network_resources (demo_variables.yml):
+#   false (default) — bring-your-own: aws_ec2_vpc_subnet_id, aws_ec2_security_group_ids,
+#                     and aws_ec2_iam_instance_profile must reference existing resources.
+#   true            — create-from-scratch: VPC, subnet, internet gateway, route table,
+#                     security group, IAM role, and instance profile are created here.
+#                     Teardown counterpart removes all of these objects.
 #
 # After this playbook completes:
 #   1. Copy the printed EC2 instance ID into aws_ssm_target_instance_id in demo_variables.yml.
@@ -26,10 +28,182 @@
     AWS_SECRET_ACCESS_KEY: "{{ aws_secret_key }}"
     AWS_DEFAULT_REGION: "{{ aws_region }}"
 
+  pre_tasks:
+    # Fail fast before touching AWS when required inputs are missing.
+    # Each mode requires a distinct set of variables to be populated.
+    - name: Validate bring-your-own network variables
+      ansible.builtin.assert:
+        that:
+          - aws_ec2_vpc_subnet_id != "CHANGE_ME"
+          - aws_ec2_security_group_ids | reject('equalto', 'CHANGE_ME') | list | length > 0
+          - aws_ec2_iam_instance_profile != "CHANGE_ME"
+        fail_msg: >-
+          aws_create_network_resources is false. Set aws_ec2_vpc_subnet_id,
+          aws_ec2_security_group_ids, and aws_ec2_iam_instance_profile in
+          demo_variables.yml to reference pre-existing resources, or set
+          aws_create_network_resources: true to create them from scratch.
+      when: not (aws_create_network_resources | default(false) | bool)
+      tags:
+        - always
+
+    - name: Validate create-from-scratch network variables
+      ansible.builtin.assert:
+        that:
+          - aws_vpc_name is defined and aws_vpc_name | length > 0
+          - aws_vpc_cidr is defined and aws_vpc_cidr | length > 0
+          - aws_subnet_name is defined and aws_subnet_name | length > 0
+          - aws_subnet_cidr is defined and aws_subnet_cidr | length > 0
+          - aws_sg_name is defined and aws_sg_name | length > 0
+          - aws_iam_role_name is defined and aws_iam_role_name | length > 0
+        fail_msg: >-
+          aws_create_network_resources is true but one or more create-from-scratch
+          variables (aws_vpc_name, aws_vpc_cidr, aws_subnet_name, aws_subnet_cidr,
+          aws_sg_name, aws_iam_role_name) are missing from demo_variables.yml.
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - always
+
   tasks:
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # 0. Conditional: create network and IAM resources from scratch
+    #    Skipped entirely when aws_create_network_resources is false.
+    # =========================================================================
+
+    - name: Create VPC for the demo environment
+      amazon.aws.ec2_vpc_net:
+        name: "{{ aws_vpc_name }}"
+        cidr_block: "{{ aws_vpc_cidr }}"
+        region: "{{ aws_region }}"
+        tags:
+          demo: cloud-native-automation
+          managed_by: ansible
+        state: present
+      register: aws_vpc_result
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - network
+
+    - name: Create subnet within the demo VPC
+      amazon.aws.ec2_vpc_subnet:
+        vpc_id: "{{ aws_vpc_result.vpc.id }}"
+        cidr: "{{ aws_subnet_cidr }}"
+        region: "{{ aws_region }}"
+        map_public: true
+        tags:
+          Name: "{{ aws_subnet_name }}"
+          demo: cloud-native-automation
+          managed_by: ansible
+        state: present
+      register: aws_subnet_result
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - network
+
+    - name: Create internet gateway for outbound SSM agent connectivity
+      # SSM agent initiates outbound HTTPS connections to AWS SSM endpoints;
+      # an internet gateway is required when instances are in a public subnet.
+      amazon.aws.ec2_vpc_igw:
+        vpc_id: "{{ aws_vpc_result.vpc.id }}"
+        region: "{{ aws_region }}"
+        tags:
+          Name: "{{ aws_vpc_name }}-igw"
+          demo: cloud-native-automation
+          managed_by: ansible
+        state: present
+      register: aws_igw_result
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - network
+
+    - name: Create route table with default route through the internet gateway
+      amazon.aws.ec2_vpc_route_table:
+        vpc_id: "{{ aws_vpc_result.vpc.id }}"
+        region: "{{ aws_region }}"
+        subnets:
+          - "{{ aws_subnet_result.subnet.id }}"
+        routes:
+          - dest: 0.0.0.0/0
+            gateway_id: "{{ aws_igw_result.gateway_id }}"
+        tags:
+          Name: "{{ aws_vpc_name }}-rt"
+          demo: cloud-native-automation
+          managed_by: ansible
+        state: present
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - network
+
+    - name: Create security group for the SSM-managed EC2 instance
+      # No inbound rules are needed; SSM agent initiates all communication outbound.
+      # purge_rules_egress: false preserves the AWS default allow-all-outbound rule,
+      # which is required for SSM agent to reach the service endpoints.
+      amazon.aws.ec2_security_group:
+        name: "{{ aws_sg_name }}"
+        description: Security group for cloud-native automation demo SSM target
+        vpc_id: "{{ aws_vpc_result.vpc.id }}"
+        region: "{{ aws_region }}"
+        purge_rules_egress: false
+        tags:
+          demo: cloud-native-automation
+          managed_by: ansible
+        state: present
+      register: aws_sg_result
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - network
+
+    - name: Create IAM role with AmazonSSMManagedInstanceCore for EC2 SSM access
+      # create_instance_profile: true creates an instance profile with the same
+      # name as the role; the EC2 instance references this profile to register
+      # with SSM. The role trusts ec2.amazonaws.com for AssumeRole.
+      amazon.aws.iam_role:
+        name: "{{ aws_iam_role_name }}"
+        assume_role_policy_document:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ec2.amazonaws.com
+              Action: sts:AssumeRole
+        managed_policies:
+          - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        create_instance_profile: true
+        state: present
+      register: aws_iam_role_result
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - iam
+
+    # Resolve the subnet ID, security group list, and IAM instance profile name
+    # into a single set of facts that the EC2 launch task consumes regardless of
+    # which mode is active. This avoids duplicating the ec2_instance task.
+    - name: Resolve EC2 launch parameters from the active networking mode
+      ansible.builtin.set_fact:
+        ec2_launch_subnet_id: >-
+          {{ aws_subnet_result.subnet.id
+             if (aws_create_network_resources | default(false) | bool)
+             else aws_ec2_vpc_subnet_id }}
+        ec2_launch_sg_ids: >-
+          {{ [aws_sg_result.group_id]
+             if (aws_create_network_resources | default(false) | bool)
+             else aws_ec2_security_group_ids }}
+        ec2_launch_iam_profile: >-
+          {{ aws_iam_role_name
+             if (aws_create_network_resources | default(false) | bool)
+             else aws_ec2_iam_instance_profile }}
+      tags:
+        - aws
+        - ec2
+
+    # =========================================================================
     # 1. SSM Automation document
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     - name: Write SSM Automation document content to a temporary file
       # Writing to a file avoids shell quoting problems with inline JSON.
@@ -101,21 +275,23 @@
         - aws
         - ssm
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # 2. EC2 target instance
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     - name: Launch EC2 instance as SSM automation target
       # amazon.aws.ec2_instance is certified; preferred over community.aws alternatives.
       # The instance must join the SSM managed-instance inventory via its IAM profile.
+      # ec2_launch_subnet_id, ec2_launch_sg_ids, and ec2_launch_iam_profile are
+      # resolved above from either the bring-your-own or create-from-scratch mode.
       amazon.aws.ec2_instance:
         name: "{{ aws_ec2_instance_name }}"
         instance_type: "{{ aws_ec2_instance_type }}"
         image_id: "{{ aws_ec2_ami_id }}"
-        vpc_subnet_id: "{{ aws_ec2_vpc_subnet_id }}"
+        vpc_subnet_id: "{{ ec2_launch_subnet_id }}"
         key_name: "{{ aws_ec2_key_name | default(omit) }}"
-        security_groups: "{{ aws_ec2_security_group_ids }}"
-        iam_instance_profile: "{{ aws_ec2_iam_instance_profile }}"
+        security_groups: "{{ ec2_launch_sg_ids }}"
+        iam_instance_profile: "{{ ec2_launch_iam_profile }}"
         state: running
         wait: true
         tags:
@@ -152,9 +328,9 @@
         - aws
         - ec2
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # 3. Maintenance window
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     - name: Create AWS maintenance window for scheduled SSM tasks
       ansible.builtin.command:
@@ -188,9 +364,9 @@
         - aws
         - maintenance-window
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # 4. Output — operator must update demo_variables.yml with these values
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     - name: Save setup outputs for workflow chaining
       ansible.builtin.set_stats:
@@ -204,7 +380,7 @@
     - name: Report required manual steps after setup
       ansible.builtin.debug:
         msg:
-          - "EC2 instance ID : {{ provisioned_instance_id }}"
+          - "EC2 instance ID      : {{ provisioned_instance_id }}"
           - "Maintenance window ID: {{ provisioned_window_id }}"
           - "ACTION REQUIRED: update aws_ssm_target_instance_id and aws_ssm_maintenance_window_id in demo_variables.yml, then re-run aap_config.yml."
       tags:
