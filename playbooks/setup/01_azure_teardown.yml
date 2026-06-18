@@ -1,4 +1,7 @@
-# Description: Delete the sample Azure Automation runbook created by 01_azure_setup.yml.
+# Description: Delete Azure resources created by 01_azure_setup.yml.
+# Always removes the demo runbook.
+# When azure_create_automation_account is true, also deletes the Automation Account
+# and resource group that were provisioned by the setup playbook.
 # Requires demo_cleanup_confirm=true to prevent accidental deletion.
 # Run after aap_cleanup.yml has removed the Controller objects.
 ---
@@ -60,11 +63,61 @@
         - azure
         - teardown
 
+    # Delete the Automation Account and resource group only when they were provisioned
+    # by 01_azure_setup.yml (create-from-scratch mode). In bring-your-own mode these
+    # objects pre-existed and must not be removed here.
+    - name: Delete Azure Automation Account created by 01_azure_setup.yml
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account
+          }}?api-version={{ azure_arm_api_version }}
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+        status_code:
+          - 200
+          - 202
+          - 204
+          - 404
+      when: azure_create_automation_account | default(false) | bool
+      tags:
+        - azure
+        - teardown
+
+    - name: Delete Azure resource group created by 01_azure_setup.yml
+      # Deleting the resource group removes all resources inside it.
+      # 202 is the expected response for async deletion; 404 means already gone.
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourcegroups/{{ azure_automation_resource_group
+          }}?api-version=2021-04-01
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+        status_code:
+          - 200
+          - 202
+          - 204
+          - 404
+      when: azure_create_automation_account | default(false) | bool
+      tags:
+        - azure
+        - teardown
+
     - name: Report Azure teardown completion
       ansible.builtin.debug:
         msg: >-
           Runbook '{{ azure_runbook_name }}' removed from '{{ azure_automation_account }}'.
-          The Automation Account itself was not deleted.
+          {% if azure_create_automation_account | default(false) | bool %}
+          Automation Account '{{ azure_automation_account }}' and resource group
+          '{{ azure_automation_resource_group }}' deletion initiated (async — may take
+          a few minutes to complete in Azure).
+          {% else %}
+          The Automation Account and resource group were not deleted (bring-your-own mode).
+          {% endif %}
       tags:
         - azure
         - teardown

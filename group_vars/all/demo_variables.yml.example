@@ -85,12 +85,35 @@ aws_account_id: CHANGE_ME
 # ============================================================================
 # Azure Automation settings
 # ============================================================================
+# Two modes controlled by azure_create_automation_account:
+#   false (default) — bring-your-own: azure_automation_resource_group and
+#                     azure_automation_account must name pre-existing resources.
+#                     Replace the CHANGE_ME placeholders below.
+#   true            — create-from-scratch: 01_azure_setup.yml creates the
+#                     resource group and Automation Account from scratch.
+#                     Provide desired resource names (not CHANGE_ME) below.
+#                     Teardown counterpart (01_azure_teardown.yml) removes
+#                     all resources created in this mode.
+azure_create_automation_account: false
 
 azure_subscription_id: CHANGE_ME
 azure_tenant_id: CHANGE_ME
 # azure_client_id and azure_client_secret are mapped from vault above.
+
+# Resource group and account names used in both modes.
+# Bring-your-own: must match names of pre-existing Azure resources.
+# Create-from-scratch: 01_azure_setup.yml creates resources with these names;
+#   replace CHANGE_ME with desired names (e.g. aap-demo-cna-rg, aap-demo-automation).
 azure_automation_resource_group: CHANGE_ME
 azure_automation_account: CHANGE_ME
+
+# --- Create-from-scratch settings (azure_create_automation_account: true) ---
+# Location and SKU for resources provisioned by 01_azure_setup.yml.
+# Safe to leave as-is; customize only if defaults conflict with your environment.
+# Teardown counterpart (01_azure_teardown.yml) removes all resources created here.
+azure_resource_group_location: eastus
+azure_automation_account_sku: Free
+
 # Name of the runbook created by playbooks/setup/01_azure_setup.yml.
 azure_runbook_name: aap-demo-runbook
 azure_runbook_description: AAP cloud-native automation demo runbook

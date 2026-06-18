@@ -13,24 +13,56 @@
     - ../group_vars/all/demo_variables.yml
 
   pre_tasks:
-    - name: Validate required variables before applying CasC
+    # Core prerequisites — always checked regardless of provider mode.
+    - name: Validate core required variables
       ansible.builtin.assert:
         that:
           - aap_hostname is defined
           - aap_hostname != "CHANGE_ME"
           - demo_project_scm_url is defined
           - demo_project_scm_url != "CHANGE_ME_GIT_REPO_URL"
+          - aws_ssm_target_instance_id is defined
+          - aws_ssm_target_instance_id != "CHANGE_ME"
+        fail_msg: >-
+          Configure aap_hostname, demo_project_scm_url, and aws_ssm_target_instance_id in
+          demo_variables.yml and credentials in vault.yml before running CasC.
+          Run 02_aws_setup.yml first if you have not provisioned the AWS EC2 target.
+
+    # Azure bring-your-own mode: resource group and account must already exist.
+    # Skipped when azure_create_automation_account is true — 01_azure_setup.yml
+    # provisions both objects before this playbook runs.
+    - name: Validate Azure bring-your-own resource names
+      ansible.builtin.assert:
+        that:
           - azure_automation_resource_group is defined
           - azure_automation_resource_group != "CHANGE_ME"
           - azure_automation_account is defined
           - azure_automation_account != "CHANGE_ME"
-          - aws_ssm_target_instance_id is defined
-          - aws_ssm_target_instance_id != "CHANGE_ME"
         fail_msg: >-
-          Configure aap_hostname, demo_project_scm_url, azure_automation_resource_group,
-          azure_automation_account, and aws_ssm_target_instance_id in demo_variables.yml
-          and credentials in vault.yml before running CasC. Run setup playbooks first if
-          you have not already provisioned the Azure and AWS supporting resources.
+          azure_create_automation_account is false (bring-your-own mode). Set
+          azure_automation_resource_group and azure_automation_account in
+          demo_variables.yml to the names of pre-existing Azure resources, or set
+          azure_create_automation_account: true and run 01_azure_setup.yml to
+          provision the resource group and Automation Account from scratch.
+      when: not (azure_create_automation_account | default(false) | bool)
+
+    # Azure create-from-scratch mode: names must be set before provisioning.
+    # 01_azure_setup.yml creates the resource group and Automation Account
+    # using these names — they cannot be CHANGE_ME.
+    - name: Validate Azure create-from-scratch resource names
+      ansible.builtin.assert:
+        that:
+          - azure_automation_resource_group is defined
+          - azure_automation_resource_group != "CHANGE_ME"
+          - azure_automation_account is defined
+          - azure_automation_account != "CHANGE_ME"
+        fail_msg: >-
+          azure_create_automation_account is true (create-from-scratch mode). Set
+          azure_automation_resource_group and azure_automation_account in
+          demo_variables.yml to the desired names for the resources that
+          01_azure_setup.yml will create, then run 01_azure_setup.yml before
+          this playbook.
+      when: azure_create_automation_account | default(false) | bool
 
   roles:
     # NOTE: infra.aap_configuration is validated content (not certified).

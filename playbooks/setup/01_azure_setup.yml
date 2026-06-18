@@ -1,8 +1,12 @@
 # Description: Create and publish the sample Azure Automation runbook required by the demo.
-# Run before aap_config.yml. The Automation Account and service principal must already
-# exist with Automation Contributor role granted to the SP on the resource group.
+# Run before aap_config.yml. Two modes controlled by azure_create_automation_account:
+#   false (default) — bring-your-own: the resource group and Automation Account must
+#                     already exist and the SP must have Automation Contributor role.
+#   true            — create-from-scratch: this playbook creates the resource group
+#                     and Automation Account before publishing the runbook. The SP
+#                     must have Contributor role on the subscription (or resource group).
 # Teardown counterpart: 01_azure_teardown.yml
-# Safe to re-run; ARM PUT for runbook creation is idempotent.
+# Safe to re-run; ARM PUT operations are idempotent.
 ---
 - name: Create and publish sample Azure Automation runbook
   hosts: localhost
@@ -25,6 +29,24 @@
       Write-Output $Message
       Write-Output "Executed at: $([datetime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')) UTC"
 
+  pre_tasks:
+    # Create-from-scratch mode: resource names must be set to real values before
+    # the playbook can provision the resource group and Automation Account.
+    - name: Validate Azure create-from-scratch resource names
+      ansible.builtin.assert:
+        that:
+          - azure_automation_resource_group is defined
+          - azure_automation_resource_group != "CHANGE_ME"
+          - azure_automation_account is defined
+          - azure_automation_account != "CHANGE_ME"
+        fail_msg: >-
+          azure_create_automation_account is true. Set azure_automation_resource_group
+          and azure_automation_account in demo_variables.yml to the desired names for
+          the resources this playbook will create (not CHANGE_ME).
+      when: azure_create_automation_account | default(false) | bool
+      tags:
+        - always
+
   tasks:
     - name: Obtain Azure AD access token for Resource Manager
       ansible.builtin.uri:
@@ -43,7 +65,71 @@
         - azure
         - auth
 
-    # Retrieve the Automation Account to resolve its Azure region.
+    # =========================================================================
+    # 0. Conditional: create resource group and Automation Account from scratch
+    #    Skipped entirely when azure_create_automation_account is false.
+    # =========================================================================
+
+    - name: Create Azure resource group for the demo environment
+      # ARM PUT for resource groups is idempotent — safe to re-run.
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourcegroups/{{ azure_automation_resource_group
+          }}?api-version=2021-04-01
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          location: "{{ azure_resource_group_location | default('eastus') }}"
+          tags:
+            demo: cloud-native-automation
+            managed_by: ansible
+        status_code:
+          - 200
+          - 201
+      when: azure_create_automation_account | default(false) | bool
+      tags:
+        - azure
+        - setup
+
+    - name: Create Azure Automation Account in the demo resource group
+      # ARM PUT is idempotent — re-running updates tags without recreating the account.
+      # SKU 'Free' supports up to 500 job-minutes per month, sufficient for demos.
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account
+          }}?api-version={{ azure_arm_api_version }}
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          location: "{{ azure_resource_group_location | default('eastus') }}"
+          sku:
+            name: "{{ azure_automation_account_sku | default('Free') }}"
+          properties: {}
+          tags:
+            demo: cloud-native-automation
+            managed_by: ansible
+        status_code:
+          - 200
+          - 201
+      when: azure_create_automation_account | default(false) | bool
+      tags:
+        - azure
+        - setup
+
+    # =========================================================================
+    # 1. Resolve the Automation Account location for use by runbook creation
+    # =========================================================================
+
+    # Bring-your-own mode: retrieve the account to learn its region.
     # The runbook resource must share the same location as its parent account.
     - name: Retrieve Automation Account metadata to resolve region
       ansible.builtin.uri:
@@ -57,16 +143,31 @@
           Authorization: "Bearer {{ azure_token.json.access_token }}"
         status_code: 200
       register: automation_account
+      when: not (azure_create_automation_account | default(false) | bool)
       tags:
         - azure
         - setup
 
-    - name: Set automation account location fact
+    - name: Set automation account location fact (bring-your-own mode)
       ansible.builtin.set_fact:
         azure_automation_location: "{{ automation_account.json.location }}"
+      when: not (azure_create_automation_account | default(false) | bool)
       tags:
         - azure
         - setup
+
+    # Create-from-scratch mode: location is already known from azure_resource_group_location.
+    - name: Set automation account location fact (create-from-scratch mode)
+      ansible.builtin.set_fact:
+        azure_automation_location: "{{ azure_resource_group_location | default('eastus') }}"
+      when: azure_create_automation_account | default(false) | bool
+      tags:
+        - azure
+        - setup
+
+    # =========================================================================
+    # 2. Create and publish the demo runbook
+    # =========================================================================
 
     - name: Create runbook object in draft state
       # azure.azcollection does not expose runbook content upload or publish actions;
@@ -140,6 +241,8 @@
           Runbook '{{ azure_runbook_name }}' created and published in
           '{{ azure_automation_account }}' ({{ azure_automation_resource_group }}).
           Run aap_config.yml next, then launch the Azure demo workflows from the Controller UI.
+          If azure_create_automation_account was true, the resource group and Automation
+          Account were also created and will be removed by 01_azure_teardown.yml.
       tags:
         - azure
         - setup

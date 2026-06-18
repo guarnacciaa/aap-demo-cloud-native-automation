@@ -5,7 +5,7 @@
 | Component | Version / Notes |
 |---|---|
 | Red Hat Ansible Automation Platform | 2.6+ |
-| Azure Automation Account | Existing account; runbook is created by setup playbook |
+| Azure Automation Account | Existing account (bring-your-own) **or** created from scratch — see below |
 | AWS IAM user | `ssm:*`, `ec2:*`, `iam:*`, `ssm:CreateMaintenanceWindow` permissions |
 | AWS networking and IAM instance profile | Bring-your-own **or** created from scratch — see below |
 | Network | Outbound HTTPS from AAP to Azure Management API and AWS API endpoints |
@@ -15,12 +15,14 @@
 The following cloud resources are created by the setup playbooks before the demo
 can run. No manual cloud console steps are required.
 
-| Dependency | Playbook | Teardown playbook | Job template |
-|---|---|---|---|
-| Azure Automation runbook | `playbooks/setup/01_azure_setup.yml` | `01_azure_teardown.yml` | Setup - Azure runbook |
-| AWS SSM Automation document | `playbooks/setup/02_aws_setup.yml` | `02_aws_teardown.yml` | Setup - AWS SSM resources |
-| AWS EC2 instance (SSM target) | `playbooks/setup/02_aws_setup.yml` | `02_aws_teardown.yml` | Setup - AWS SSM resources |
-| AWS maintenance window | `playbooks/setup/02_aws_setup.yml` | `02_aws_teardown.yml` | Setup - AWS SSM resources |
+| Dependency | Playbook | Teardown playbook | Job template | Mode |
+|---|---|---|---|---|
+| Azure resource group | `playbooks/setup/01_azure_setup.yml` | `01_azure_teardown.yml` | Setup - Azure runbook | create-from-scratch only |
+| Azure Automation Account | `playbooks/setup/01_azure_setup.yml` | `01_azure_teardown.yml` | Setup - Azure runbook | create-from-scratch only |
+| Azure Automation runbook | `playbooks/setup/01_azure_setup.yml` | `01_azure_teardown.yml` | Setup - Azure runbook | always |
+| AWS SSM Automation document | `playbooks/setup/02_aws_setup.yml` | `02_aws_teardown.yml` | Setup - AWS SSM resources | always |
+| AWS EC2 instance (SSM target) | `playbooks/setup/02_aws_setup.yml` | `02_aws_teardown.yml` | Setup - AWS SSM resources | always |
+| AWS maintenance window | `playbooks/setup/02_aws_setup.yml` | `02_aws_teardown.yml` | Setup - AWS SSM resources | always |
 
 The `WF - Demo setup` workflow runs the Azure and AWS setup steps in sequence
 from the Controller UI.
@@ -32,6 +34,54 @@ cd artifacts/demos/aap-demo-cloud-native-automation
 ansible-galaxy collection install -r collections/requirements.yml -p collections
 cp ansible.cfg.example ansible.cfg
 ```
+
+## Azure Automation Account mode
+
+`01_azure_setup.yml` supports two modes, selected by `azure_create_automation_account`
+in `demo_variables.yml`:
+
+### Bring-your-own (default: `azure_create_automation_account: false`)
+
+Use this mode when a resource group and Automation Account already exist in your Azure
+subscription. The service principal must have **Automation Contributor** on the
+resource group.
+
+Set the following variables to the names of the pre-existing resources:
+
+```yaml
+azure_automation_resource_group: my-existing-rg
+azure_automation_account: my-existing-automation-account
+```
+
+`01_azure_teardown.yml` removes only the demo runbook. The resource group and
+Automation Account are not deleted.
+
+### Create from scratch (`azure_create_automation_account: true`)
+
+Use this mode when no Automation Account exists or when you want the demo to be fully
+self-contained. `01_azure_setup.yml` creates:
+
+- Resource group (`azure_automation_resource_group` / `azure_resource_group_location`)
+- Automation Account (`azure_automation_account` / `azure_automation_account_sku`)
+- The demo runbook inside the new account
+
+The service principal needs **Contributor** on the subscription (or at minimum on the
+resource group scope if the group already exists).
+
+Set desired names for the new resources (not `CHANGE_ME`) and configure location and
+SKU:
+
+```yaml
+azure_create_automation_account: true
+azure_automation_resource_group: aap-demo-cna-rg
+azure_automation_account: aap-demo-automation-account
+azure_resource_group_location: eastus   # any valid Azure region
+azure_automation_account_sku: Free      # Free (500 job-minutes/month) or Basic
+```
+
+`01_azure_teardown.yml` removes the runbook, Automation Account, and resource group.
+Deletion of the resource group is asynchronous and may take a few minutes to complete
+in Azure.
 
 ## AWS networking and IAM mode
 
@@ -85,7 +135,14 @@ Edit `group_vars/all/demo_variables.yml` and set at minimum:
 
 - `aap_hostname` — Controller hostname or Gateway URL
 - `azure_subscription_id`, `azure_tenant_id`
-- `azure_automation_resource_group`, `azure_automation_account`
+- `azure_create_automation_account` — `false` (default) to use a pre-existing account,
+  `true` to have `01_azure_setup.yml` create the resource group and Automation Account
+  (see [Azure Automation Account mode](#azure-automation-account-mode) above)
+- When `azure_create_automation_account: false`: set `azure_automation_resource_group`
+  and `azure_automation_account` to existing resource names
+- When `azure_create_automation_account: true`: set `azure_automation_resource_group`
+  and `azure_automation_account` to desired names; configure `azure_resource_group_location`
+  and `azure_automation_account_sku` as needed
 - `aws_region`, `aws_account_id`
 - `aws_ec2_ami_id` — Amazon Linux 2023 or RHEL AMI in your region
 - `aws_create_network_resources` — `false` (default) to use pre-existing resources,

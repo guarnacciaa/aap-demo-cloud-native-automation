@@ -83,8 +83,8 @@ playbooks/
   aap_cleanup.yml         Remove Controller objects
   verify.yml              Smoke test prerequisites
   setup/
-    01_azure_setup.yml    Create Azure runbook
-    01_azure_teardown.yml Delete Azure runbook
+    01_azure_setup.yml    Create Azure runbook (optionally also RG + Automation Account)
+    01_azure_teardown.yml Delete Azure runbook (optionally also RG + Automation Account)
     02_aws_setup.yml      Create SSM document, EC2 instance, maintenance window
     02_aws_teardown.yml   Remove AWS resources
   demo/
@@ -106,8 +106,14 @@ docs/
 
 ## Prerequisites
 
-- Azure Automation Account with an Azure service principal granted
-  Automation Contributor on the resource group.
+- Azure service principal with appropriate permissions — two modes are supported:
+  - **Bring-your-own** (default): supply names of a pre-existing resource group and
+    Automation Account; the service principal needs Automation Contributor on the
+    resource group.
+  - **Create from scratch**: set `azure_create_automation_account: true` in
+    `demo_variables.yml`; `01_azure_setup.yml` creates the resource group and
+    Automation Account. The service principal needs Contributor on the subscription
+    (or on the target resource group scope). The teardown playbook removes both objects.
 - AWS IAM user with `ssm:*`, `ec2:*`, `iam:*`, and maintenance window permissions.
 - AWS EC2 networking and IAM instance profile — two modes are supported:
   - **Bring-your-own** (default): supply IDs for a pre-existing VPC subnet,
@@ -168,8 +174,10 @@ Demo-Multicloud
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `aap_config.yml` fails on assert | `aap_hostname` or `demo_project_scm_url` still `CHANGE_ME` | Edit `demo_variables.yml` |
-| Azure ARM returns 403 | SP not granted Automation Contributor | Assign role in Azure portal or via CLI |
+| `aap_config.yml` fails on assert (`aap_hostname` or `demo_project_scm_url`) | Value still `CHANGE_ME` | Edit `demo_variables.yml` |
+| `aap_config.yml` fails on assert (`azure_automation_account`) | Bring-your-own mode but account name not set | Set `azure_automation_account` in `demo_variables.yml`, or switch to `azure_create_automation_account: true` and run `01_azure_setup.yml` first |
+| Azure ARM returns 403 on resource group or account creation | SP lacks Contributor role | Assign Contributor on the subscription or resource group scope |
+| Azure ARM returns 403 on runbook operations | SP lacks Automation Contributor | Assign Automation Contributor on the resource group |
 | SSM execution times out | SSM agent not registered on EC2 | Check instance profile; `02_aws_setup.yml` waits for registration |
 | `aws ssm create-document` fails with `DocumentAlreadyExists` | Document name already used | Delete manually (`aws ssm delete-document --name ...`) or change `aws_ssm_document_name` |
 | Email notification skipped | `enable_email_notification` is `false` (default) | Set to `true` and configure SMTP variables |
