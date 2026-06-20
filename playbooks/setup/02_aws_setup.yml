@@ -70,21 +70,19 @@
     #     demo_variables.yml without running a separate CLI command.
     # =========================================================================
 
-    - name: Retrieve AWS account ID from STS
-      # aws sts get-caller-identity is always available when AWS credentials are
-      # configured. The result is used to build SSM automation-definition ARNs
-      # and is published via set_stats for downstream workflow nodes.
-      ansible.builtin.command:
-        cmd: aws sts get-caller-identity --query Account --output text
-      register: sts_account_id
+    - name: Retrieve AWS account ID via boto3 (no awscli required)
+      # amazon.aws.aws_caller_info uses boto3 directly — does not require awscli
+      # to be installed on the control node. Returns account, arn, and user_id.
+      amazon.aws.aws_caller_info:
+      register: sts_info
       changed_when: false
       tags:
         - aws
         - setup
 
-    - name: Set aws_account_id fact from STS response
+    - name: Set aws_account_id fact from caller info
       ansible.builtin.set_fact:
-        resolved_aws_account_id: "{{ sts_account_id.stdout | trim }}"
+        resolved_aws_account_id: "{{ sts_info.account }}"
       tags:
         - aws
         - setup

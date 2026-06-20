@@ -17,18 +17,31 @@
       tags:
         - verify
 
-    - name: Confirm awscli is available when testing AWS path locally
+    - name: Confirm awscli is available on the control node
+      # awscli is required by setup playbooks for SSM document creation, maintenance
+      # window registration, and SSM agent polling — no certified module covers these.
+      # Install with: pip3 install awscli
       ansible.builtin.command:
         cmd: aws --version
       changed_when: false
-      failed_when: false
       register: awscli_check
       tags:
         - verify
 
-    - name: Report awscli availability
+    - name: Confirm boto3 is available on the control node
+      # boto3 is required by amazon.aws collection modules (ec2_instance, iam_role, etc.).
+      # Install with: pip3 install boto3
+      ansible.builtin.command:
+        cmd: python3 -c "import boto3; print(boto3.__version__)"
+      changed_when: false
+      register: boto3_check
+      tags:
+        - verify
+
+    - name: Report control node dependency status
       ansible.builtin.debug:
-        msg: >-
-          awscli {{ 'available' if awscli_check.rc == 0 else 'not found — required in EE for SSM playbooks' }}
+        msg:
+          - "awscli : {{ awscli_check.stdout | default('NOT FOUND') }}"
+          - "boto3  : {{ boto3_check.stdout | default('NOT FOUND') }}"
       tags:
         - verify

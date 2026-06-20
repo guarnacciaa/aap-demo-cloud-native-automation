@@ -106,6 +106,11 @@ docs/
 
 ## Prerequisites
 
+- Python `boto3` on the control node — required by `amazon.aws` collection modules
+  (`pip3 install boto3`).
+- AWS CLI on the control node — required by setup playbooks for SSM document creation,
+  maintenance window registration, and SSM agent polling. No certified Ansible module
+  covers these operations (`pip3 install awscli`).
 - Azure service principal with appropriate permissions — two modes are supported:
   - **Bring-your-own** (default): supply names of a pre-existing resource group and
     Automation Account; the service principal needs Automation Contributor on the

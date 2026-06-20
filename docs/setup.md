@@ -5,6 +5,8 @@
 | Component | Version / Notes |
 |---|---|
 | Red Hat Ansible Automation Platform | 2.6+ |
+| Python + boto3 | Required on the control node for `amazon.aws` modules (`pip3 install boto3`) |
+| AWS CLI (`awscli`) | Required on the control node for SSM document, maintenance window, and SSM agent tasks (`pip3 install awscli`) |
 | Azure Automation Account | Existing account (bring-your-own) **or** created from scratch — see below |
 | AWS IAM user | `ssm:*`, `ec2:*`, `iam:*`, `ssm:CreateMaintenanceWindow` permissions |
 | AWS networking and IAM instance profile | Bring-your-own **or** created from scratch — see below |
