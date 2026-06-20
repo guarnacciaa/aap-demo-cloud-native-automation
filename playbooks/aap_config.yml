@@ -14,6 +14,9 @@
 
   pre_tasks:
     # Core prerequisites — always checked regardless of provider mode.
+    # aws_ssm_target_instance_id, aws_ssm_maintenance_window_id, aws_account_id,
+    # and aws_ssm_service_role_arn are printed by 02_aws_setup.yml and must be
+    # copied into demo_variables.yml before this playbook runs.
     - name: Validate core required variables
       ansible.builtin.assert:
         that:
@@ -23,10 +26,17 @@
           - demo_project_scm_url != "CHANGE_ME_GIT_REPO_URL"
           - aws_ssm_target_instance_id is defined
           - aws_ssm_target_instance_id != "CHANGE_ME"
+          - aws_ssm_maintenance_window_id is defined
+          - aws_ssm_maintenance_window_id != "CHANGE_ME"
+          - aws_account_id is defined
+          - aws_account_id != "CHANGE_ME"
+          - aws_ssm_service_role_arn is defined
+          - aws_ssm_service_role_arn != "CHANGE_ME_ROLE_ARN"
         fail_msg: >-
-          Configure aap_hostname, demo_project_scm_url, and aws_ssm_target_instance_id in
-          demo_variables.yml and credentials in vault.yml before running CasC.
-          Run 02_aws_setup.yml first if you have not provisioned the AWS EC2 target.
+          One or more required variables are still set to CHANGE_ME in demo_variables.yml.
+          Run 02_aws_setup.yml first, then copy all four printed values into demo_variables.yml:
+            aws_ssm_target_instance_id, aws_ssm_maintenance_window_id,
+            aws_account_id, aws_ssm_service_role_arn.
 
     # Azure bring-your-own mode: resource group and account must already exist.
     # Skipped when azure_create_automation_account is true — 01_azure_setup.yml
