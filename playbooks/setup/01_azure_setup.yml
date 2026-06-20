@@ -97,7 +97,8 @@
 
     - name: Create Azure Automation Account in the demo resource group
       # ARM PUT is idempotent — re-running updates tags without recreating the account.
-      # SKU 'Free' supports up to 500 job-minutes per month, sufficient for demos.
+      # API version 2024-10-23 requires sku to be nested inside properties (not at top
+      # level). The Free SKU was removed in newer API versions; Basic is the standard tier.
       ansible.builtin.uri:
         url: >-
           https://management.azure.com/subscriptions/{{ azure_subscription_id
@@ -111,9 +112,9 @@
         body_format: json
         body:
           location: "{{ azure_resource_group_location | default('eastus') }}"
-          sku:
-            name: "{{ azure_automation_account_sku | default('Free') }}"
-          properties: {}
+          properties:
+            sku:
+              name: "{{ azure_automation_account_sku | default('Basic') }}"
           tags:
             demo: cloud-native-automation
             managed_by: ansible

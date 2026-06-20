@@ -116,7 +116,7 @@ azure_automation_account: CHANGE_ME
 # Safe to leave as-is; customize only if defaults conflict with your environment.
 # Teardown counterpart (01_azure_teardown.yml) removes all resources created here.
 azure_resource_group_location: eastus
-azure_automation_account_sku: Free
+azure_automation_account_sku: Basic
 
 # Name of the runbook created by playbooks/setup/01_azure_setup.yml.
 azure_runbook_name: aap-demo-runbook
