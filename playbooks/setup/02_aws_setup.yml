@@ -334,12 +334,17 @@
       # The instance must join the SSM managed-instance inventory via its IAM profile.
       # ec2_launch_subnet_id, ec2_launch_sg_ids, and ec2_launch_iam_profile are
       # resolved above from either the bring-your-own or create-from-scratch mode.
+      # key_name is omitted when aws_ec2_key_name is unset or left as CHANGE_ME;
+      # SSM-only access does not require a key pair.
       amazon.aws.ec2_instance:
         name: "{{ aws_ec2_instance_name }}"
         instance_type: "{{ aws_ec2_instance_type }}"
         image_id: "{{ aws_ec2_ami_id }}"
         vpc_subnet_id: "{{ ec2_launch_subnet_id }}"
-        key_name: "{{ aws_ec2_key_name | default(omit) }}"
+        key_name: >-
+          {{ aws_ec2_key_name
+             if (aws_ec2_key_name | default('') not in ['', 'CHANGE_ME'])
+             else omit }}
         security_groups: "{{ ec2_launch_sg_ids }}"
         iam_instance_profile: "{{ ec2_launch_iam_profile }}"
         state: running
