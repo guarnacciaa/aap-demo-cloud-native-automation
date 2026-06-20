@@ -75,11 +75,15 @@ aws_ssm_target_instance_id: CHANGE_ME
 # Populated after running 02_aws_setup.yml — copy the printed window ID here.
 aws_ssm_maintenance_window_id: CHANGE_ME
 aws_ssm_maintenance_task_name: aap-demo-ssm-task
-# IAM role ARN that SSM uses to execute the maintenance window task.
-# Must have ssm:StartAutomationExecution and ec2:DescribeInstances permissions.
-aws_ssm_service_role_arn: arn:aws:iam::CHANGE_ME:role/SSMMaintenanceWindowRole
+# IAM role ARN that SSM assumes to execute the maintenance window Automation task.
+# Bring-your-own mode: supply the ARN of a pre-existing role with
+#   AmazonSSMAutomationRole (or equivalent ssm:StartAutomationExecution permissions).
+# Create-from-scratch mode (aws_create_network_resources: true): 02_aws_setup.yml
+#   creates the role and prints its ARN — copy the printed value here.
+aws_ssm_service_role_arn: CHANGE_ME_ROLE_ARN
 # 12-digit AWS account ID — used to build the SSM automation-definition ARN.
-# Retrieve it with: aws sts get-caller-identity --query Account --output text
+# 02_aws_setup.yml always retrieves and prints this value via STS; copy it here.
+# Retrieve manually with: aws sts get-caller-identity --query Account --output text
 aws_account_id: CHANGE_ME
 
 # ============================================================================
@@ -189,6 +193,11 @@ aws_subnet_cidr: "10.0.1.0/24"
 aws_sg_name: aap-demo-cna-sg
 # IAM role and instance profile created by 02_aws_setup.yml (profile name = role name).
 aws_iam_role_name: aap-demo-ssm-instance-role
+# IAM service role created by 02_aws_setup.yml for SSM maintenance window task execution.
+# SSM assumes this role (trust: ssm.amazonaws.com) to run Automation documents on the
+# EC2 target. AmazonSSMAutomationRole managed policy is attached automatically.
+# After setup, copy the printed ARN into aws_ssm_service_role_arn above.
+aws_ssm_service_role_name: aap-demo-ssm-service-role
 
 # --- AWS maintenance window (02_aws_setup.yml) ---
 demo_aws_maintenance_window_name: aap-demo-maintenance-window

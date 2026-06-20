@@ -65,8 +65,33 @@
 
   tasks:
     # =========================================================================
-    # 0. Conditional: create network and IAM resources from scratch
-    #    Skipped entirely when aws_create_network_resources is false.
+    # 0a. Always: retrieve AWS account ID from STS
+    #     Runs in both modes so the operator can copy the value into
+    #     demo_variables.yml without running a separate CLI command.
+    # =========================================================================
+
+    - name: Retrieve AWS account ID from STS
+      # aws sts get-caller-identity is always available when AWS credentials are
+      # configured. The result is used to build SSM automation-definition ARNs
+      # and is published via set_stats for downstream workflow nodes.
+      ansible.builtin.command:
+        cmd: aws sts get-caller-identity --query Account --output text
+      register: sts_account_id
+      changed_when: false
+      tags:
+        - aws
+        - setup
+
+    - name: Set aws_account_id fact from STS response
+      ansible.builtin.set_fact:
+        resolved_aws_account_id: "{{ sts_account_id.stdout | trim }}"
+      tags:
+        - aws
+        - setup
+
+    # =========================================================================
+    # 0b. Conditional: create network and IAM resources from scratch
+    #     Skipped entirely when aws_create_network_resources is false.
     # =========================================================================
 
     - name: Create VPC for the demo environment
@@ -180,10 +205,33 @@
         - aws
         - iam
 
-    # Resolve the subnet ID, security group list, and IAM instance profile name
-    # into a single set of facts that the EC2 launch task consumes regardless of
-    # which mode is active. This avoids duplicating the ec2_instance task.
-    - name: Resolve EC2 launch parameters from the active networking mode
+    - name: Create IAM service role for SSM maintenance window task execution
+      # This is a different role from the EC2 instance profile above.
+      # SSM assumes this role (trust: ssm.amazonaws.com) to call
+      # ssm:StartAutomationExecution when the maintenance window fires.
+      # AmazonSSMAutomationRole is the AWS-managed policy for this purpose.
+      amazon.aws.iam_role:
+        name: "{{ aws_ssm_service_role_name }}"
+        assume_role_policy_document:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ssm.amazonaws.com
+              Action: sts:AssumeRole
+        managed_policies:
+          - arn:aws:iam::aws:policy/service-role/AmazonSSMAutomationRole
+        state: present
+      register: aws_ssm_service_role_result
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - iam
+
+    # Resolve all mode-dependent launch parameters into a single set of facts
+    # consumed by the EC2 task and the output section below.
+    # This avoids duplicating the ec2_instance task and the set_stats task.
+    - name: Resolve EC2 launch parameters and SSM service role from the active mode
       ansible.builtin.set_fact:
         ec2_launch_subnet_id: >-
           {{ aws_subnet_result.subnet.id
@@ -197,6 +245,10 @@
           {{ aws_iam_role_name
              if (aws_create_network_resources | default(false) | bool)
              else aws_ec2_iam_instance_profile }}
+        resolved_ssm_service_role_arn: >-
+          {{ aws_ssm_service_role_result.iam_role.arn
+             if (aws_create_network_resources | default(false) | bool)
+             else aws_ssm_service_role_arn }}
       tags:
         - aws
         - ec2
@@ -373,6 +425,8 @@
         data:
           aws_ec2_instance_id: "{{ provisioned_instance_id }}"
           aws_maintenance_window_id: "{{ provisioned_window_id }}"
+          aws_account_id: "{{ resolved_aws_account_id }}"
+          aws_ssm_service_role_arn: "{{ resolved_ssm_service_role_arn }}"
       tags:
         - aws
         - setup
@@ -382,7 +436,11 @@
         msg:
           - "EC2 instance ID      : {{ provisioned_instance_id }}"
           - "Maintenance window ID: {{ provisioned_window_id }}"
-          - "ACTION REQUIRED: update aws_ssm_target_instance_id and aws_ssm_maintenance_window_id in demo_variables.yml, then re-run aap_config.yml."
+          - "AWS account ID       : {{ resolved_aws_account_id }}"
+          - "SSM service role ARN : {{ resolved_ssm_service_role_arn }}"
+          - "ACTION REQUIRED: copy the four values above into demo_variables.yml"
+          - "  aws_ssm_target_instance_id, aws_ssm_maintenance_window_id,"
+          - "  aws_account_id, aws_ssm_service_role_arn — then re-run aap_config.yml."
       tags:
         - aws
         - setup

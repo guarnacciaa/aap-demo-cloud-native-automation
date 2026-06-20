@@ -113,6 +113,17 @@
         - aws
         - iam
 
+    - name: Delete IAM service role for SSM maintenance window task execution
+      # This is the ssm.amazonaws.com trust role created alongside the EC2 instance
+      # profile. It has no instance profile, so delete_instance_profile is not needed.
+      amazon.aws.iam_role:
+        name: "{{ aws_ssm_service_role_name }}"
+        state: absent
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - iam
+
     # Look up the VPC by name and demo tag so downstream resource deletions have
     # the VPC ID even if it was never stored in a variable.
     - name: Look up demo VPC by name tag
@@ -241,7 +252,7 @@
           AWS resources removed: EC2 instance '{{ aws_ec2_instance_name }}',
           SSM document '{{ aws_ssm_document_name }}',
           maintenance window '{{ aws_ssm_maintenance_window_id }}'.
-          {{ 'VPC, subnet, security group, internet gateway, route tables, IAM role, and instance profile also removed.' if (aws_create_network_resources | default(false) | bool) else 'Pre-existing network and IAM resources were not modified.' }}
+          {{ 'VPC, subnet, security group, internet gateway, route tables, EC2 IAM role/profile, and SSM service role also removed.' if (aws_create_network_resources | default(false) | bool) else 'Pre-existing network and IAM resources were not modified.' }}
       tags:
         - aws
         - teardown
