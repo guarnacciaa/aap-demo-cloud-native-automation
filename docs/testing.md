@@ -48,9 +48,9 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | Teardown - Azure runbook | Not tested | — | |
 | Teardown - AWS SSM resources | Not tested | — | |
 | Azure - Run Runbook and collect output | Pass | 2026-06-22 | `failed=0`; runbook output confirmed end-to-end |
-| Azure - Schedule Runbook | Not tested | — | |
+| Azure - Schedule Runbook | Pass | 2026-06-22 | `failed=0`; fixes applied: task order (schedule before jobSchedule), UUID as jobScheduleId, dynamic start time (+10 min) |
 | AWS - Run SSM document and collect output | Pass | 2026-06-22 | `failed=0`; SSM Automation executed on EC2 target and collected outputs |
-| AWS - Schedule SSM via maintenance window | Not tested | — | |
+| AWS - Schedule SSM via maintenance window | Pass | 2026-06-22 | `failed=0 changed=1`; task registered in maintenance window |
 | Notify - Email automation results | Not tested | — | |
 
 ### Workflows
@@ -60,9 +60,9 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | WF - Demo setup | Not tested | — | |
 | WF - Demo teardown | Not tested | — | |
 | WF - Azure Runbook execute and collect | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
-| WF - Azure Runbook schedule | Not tested | — | |
+| WF - Azure Runbook schedule | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
 | WF - AWS SSM document execute and collect | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
-| WF - AWS SSM schedule via maintenance window | Not tested | — | |
+| WF - AWS SSM schedule via maintenance window | Pass | 2026-06-22 | `failed=0 changed=1`; workflow completed end-to-end |
 
 ## Open issues
 

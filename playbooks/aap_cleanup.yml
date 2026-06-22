@@ -1,29 +1,160 @@
-# Description: Remove AAP objects created by the cloud-native automation demo.
+# Description: Remove AAP objects created by the cloud-native automation demo (destructive).
+# Requires explicit confirmation via demo_cleanup_confirm=true extra var.
+#
+# Objects are removed in reverse dependency order so parent references
+# (organization, inventory) still resolve during deletion. Labels are
+# skipped because the Controller API does not support state: absent for
+# labels; they are removed automatically when the organization is deleted.
+#
+# Each task uses ignore_errors so the playbook completes even if an object
+# was already removed or was never created.
 ---
-- name: Confirm cloud native automation demo cleanup
+- name: Remove cloud native automation demo configuration from AAP
   hosts: localhost
+  connection: local
   gather_facts: false
   collections:
+    - ansible.controller
     - ansible.builtin
-  tasks:
+
+  vars_files:
+    - ../vault.yml
+    - ../group_vars/all/demo_variables.yml
+
+  vars:
+    controller_auth: &controller_auth
+      controller_host: "https://{{ aap_hostname }}"
+      controller_username: "{{ aap_username }}"
+      controller_password: "{{ aap_password }}"
+      validate_certs: "{{ aap_validate_certs }}"
+
+  pre_tasks:
     - name: Require demo_cleanup_confirm=true before removing AAP objects
       ansible.builtin.assert:
         that:
           - demo_cleanup_confirm | default(false) | bool
-        fail_msg: Pass -e demo_cleanup_confirm=true to run cleanup.
+        fail_msg: >-
+          Refusing to run cleanup. Pass -e demo_cleanup_confirm=true to
+          remove demo organizations, projects, templates, and inventories.
       tags:
         - always
 
-- name: Remove cloud native automation demo configuration from AAP
-  hosts: localhost
-  gather_facts: false
-  collections:
-    - infra.aap_configuration
-    - ansible.builtin
-  vars_files:
-    - ../vault.yml
-    - ../group_vars/all/demo_variables.yml
-  vars:
-    platform_state: absent
-  roles:
-    - role: infra.aap_configuration.dispatch
+  tasks:
+    # --- 1. Workflow templates (depend on job templates) ---
+    - name: Remove workflow templates
+      ansible.controller.workflow_job_template:
+        name: "{{ item }}"
+        organization: "{{ demo_organization_name }}"
+        state: absent
+        <<: *controller_auth
+      loop:
+        - "WF - Demo setup"
+        - "WF - Demo teardown"
+        - "WF - Azure Runbook execute and collect"
+        - "WF - Azure Runbook schedule"
+        - "WF - AWS SSM document execute and collect"
+        - "WF - AWS SSM schedule via maintenance window"
+      ignore_errors: true
+      tags:
+        - workflows
+
+    # --- 2. Job templates (depend on project, inventory, credentials) ---
+    - name: Remove job templates
+      ansible.controller.job_template:
+        name: "{{ item }}"
+        organization: "{{ demo_organization_name }}"
+        state: absent
+        <<: *controller_auth
+      loop:
+        - "Setup - Azure runbook"
+        - "Setup - AWS SSM resources"
+        - "Teardown - Azure runbook"
+        - "Teardown - AWS SSM resources"
+        - "Azure - Run Runbook and collect output"
+        - "Azure - Schedule Runbook"
+        - "AWS - Run SSM document and collect output"
+        - "AWS - Schedule SSM via maintenance window"
+        - "Notify - Email automation results"
+      ignore_errors: true
+      tags:
+        - templates
+
+    # --- 3. Inventories ---
+    - name: Remove inventories
+      ansible.controller.inventory:
+        name: "{{ demo_inventory_name }}"
+        organization: "{{ demo_organization_name }}"
+        state: absent
+        <<: *controller_auth
+      ignore_errors: true
+      tags:
+        - inventories
+
+    # --- 4. Project ---
+    - name: Remove project
+      ansible.controller.project:
+        name: "{{ demo_project_name }}"
+        organization: "{{ demo_organization_name }}"
+        state: absent
+        <<: *controller_auth
+      ignore_errors: true
+      tags:
+        - projects
+
+    # --- 5. Credentials ---
+    - name: Remove credentials
+      ansible.controller.credential:
+        name: "{{ item.name }}"
+        organization: "{{ demo_organization_name }}"
+        credential_type: "{{ item.type }}"
+        state: absent
+        <<: *controller_auth
+      loop:
+        - name: "{{ azure_credential_name }}"
+          type: Microsoft Azure Resource Manager
+        - name: "{{ aws_credential_name }}"
+          type: Amazon Web Services
+        - name: "{{ hub_registry_credential_name }}"
+          type: Container Registry
+      ignore_errors: true
+      tags:
+        - credentials
+
+    # --- 6. Execution environment ---
+    - name: Remove execution environment
+      ansible.controller.execution_environment:
+        name: "{{ demo_execution_environment_name }}"
+        organization: "{{ demo_organization_name }}"
+        state: absent
+        <<: *controller_auth
+      ignore_errors: true
+      tags:
+        - execution_environments
+
+    # --- 7. Labels ---
+    # The Controller API does not support deleting labels directly.
+    # They are removed when the parent organization is deleted below.
+    - name: Labels will be removed with the organization
+      ansible.builtin.debug:
+        msg: "Skipping labels — no direct delete API; removed with organization."
+      tags:
+        - labels
+
+    # --- 8. Organization (last — parent of all objects above) ---
+    - name: Remove organization
+      ansible.controller.organization:
+        name: "{{ demo_organization_name }}"
+        state: absent
+        <<: *controller_auth
+      ignore_errors: true
+      tags:
+        - organization
+
+  post_tasks:
+    - name: Cleanup summary
+      ansible.builtin.debug:
+        msg: >-
+          Cleanup complete. All demo AAP objects have been removed.
+          To re-deploy, run: ansible-playbook playbooks/aap_config.yml --vault-id @prompt
+      tags:
+        - always
