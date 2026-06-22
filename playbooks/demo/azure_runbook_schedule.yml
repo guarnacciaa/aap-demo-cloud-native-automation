@@ -45,16 +45,15 @@
       tags:
         - always
 
-    - name: Ensure schedule start time is at least 10 minutes in the future
-      # Azure rejects a schedule whose start time is less than 5 minutes ahead.
-      # If the configured azure_schedule_start_time is in the past (or unset),
-      # override it with now + 10 minutes so the demo always runs without editing
-      # demo_variables.yml before each run.
+    - name: Compute effective schedule start time (now + 10 minutes)
+      # Azure rejects a schedule whose startTime is less than 5 minutes ahead.
+      # Extra vars in AAP have higher precedence than set_fact, so overriding
+      # azure_schedule_start_time directly does not work when it is defined as
+      # an extra var or a stale demo_variables.yml value. A separate internal
+      # variable (_azure_effective_start_time) avoids the precedence conflict
+      # and is always computed fresh at task execution time.
       ansible.builtin.set_fact:
-        azure_schedule_start_time: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(ansible_date_time.epoch | int + 600) }}"
-      when: >-
-        (azure_schedule_start_time | default('')) | length == 0 or
-        (azure_schedule_start_time < ansible_date_time.iso8601_basic_short)
+        _azure_effective_start_time: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(ansible_date_time.epoch | int + 600) }}"
       tags:
         - always
 
@@ -89,7 +88,7 @@
         body_format: json
         body:
           properties:
-            startTime: "{{ azure_schedule_start_time }}"
+            startTime: "{{ _azure_effective_start_time }}"
             interval: "{{ azure_schedule_interval | int }}"
             frequency: "{{ azure_schedule_frequency }}"
             timeZone: UTC
@@ -128,7 +127,7 @@
         data:
           azure_job_schedule_name: "{{ azure_job_schedule_name }}"
           azure_runbook_name: "{{ azure_runbook_name }}"
-          azure_schedule_start_time: "{{ azure_schedule_start_time }}"
+          azure_schedule_start_time: "{{ _azure_effective_start_time }}"
       tags:
         - azure
         - schedule
