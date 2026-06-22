@@ -7,15 +7,6 @@
     - ansible.builtin
 
   vars:
-    # When running locally, these come from demo_variables.yml (vault mappings).
-    # When running as an AAP job template with the Azure Service Principal
-    # credential attached, AAP injects AZURE_SUBSCRIPTION_ID, AZURE_CLIENT_ID,
-    # AZURE_SECRET, and AZURE_TENANT as environment variables — use those as
-    # fallbacks so the playbook works in both execution contexts.
-    azure_subscription_id: "{{ azure_subscription_id | default(lookup('env', 'AZURE_SUBSCRIPTION_ID')) }}"
-    azure_tenant_id: "{{ azure_tenant_id | default(lookup('env', 'AZURE_TENANT')) }}"
-    azure_client_id: "{{ azure_client_id | default(lookup('env', 'AZURE_CLIENT_ID')) }}"
-    azure_client_secret: "{{ azure_client_secret | default(lookup('env', 'AZURE_SECRET')) }}"
     azure_automation_resource_group: "{{ azure_automation_resource_group | mandatory }}"
     azure_automation_account: "{{ azure_automation_account | mandatory }}"
     azure_runbook_name: "{{ azure_runbook_name | mandatory }}"
@@ -24,6 +15,35 @@
     azure_schedule_frequency: "{{ azure_schedule_frequency | default('Hour') }}"
     azure_schedule_interval: "{{ azure_schedule_interval | default(24) }}"
     azure_arm_api_version: "2024-10-23"
+
+  pre_tasks:
+    - name: Resolve Azure credentials from AAP credential injection or Ansible variables
+      # The AAP Azure Service Principal credential injects AZURE_SUBSCRIPTION_ID,
+      # AZURE_CLIENT_ID, AZURE_SECRET, and AZURE_TENANT as environment variables.
+      # When running locally with demo_variables.yml those Ansible variables are
+      # already defined at higher precedence and take priority over the env lookup.
+      # Self-referencing in vars: causes infinite recursion in Ansible — set_fact
+      # in pre_tasks avoids that by resolving variables at task execution time.
+      ansible.builtin.set_fact:
+        azure_subscription_id: >-
+          {{ azure_subscription_id
+             if (azure_subscription_id | default('')) | length > 0
+             else lookup('env', 'AZURE_SUBSCRIPTION_ID') }}
+        azure_tenant_id: >-
+          {{ azure_tenant_id
+             if (azure_tenant_id | default('')) | length > 0
+             else lookup('env', 'AZURE_TENANT') }}
+        azure_client_id: >-
+          {{ azure_client_id
+             if (azure_client_id | default('')) | length > 0
+             else lookup('env', 'AZURE_CLIENT_ID') }}
+        azure_client_secret: >-
+          {{ azure_client_secret
+             if (azure_client_secret | default('')) | length > 0
+             else lookup('env', 'AZURE_SECRET') }}
+      no_log: "{{ demo_no_log | default(false) }}"
+      tags:
+        - always
 
   tasks:
     - name: Obtain Azure AD access token for Resource Manager
