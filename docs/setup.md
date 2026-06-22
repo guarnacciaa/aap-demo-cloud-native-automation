@@ -78,7 +78,7 @@ azure_create_automation_account: true
 azure_automation_resource_group: aap-demo-cna-rg
 azure_automation_account: aap-demo-automation-account
 azure_resource_group_location: eastus   # any valid Azure region
-azure_automation_account_sku: Free      # Free (500 job-minutes/month) or Basic
+azure_automation_account_sku: Basic     # Basic or Free (Free: 500 job-minutes/month)
 ```
 
 `01_azure_teardown.yml` removes the runbook, Automation Account, and resource group.
@@ -151,7 +151,10 @@ Edit `group_vars/all/demo_variables.yml` and set at minimum:
   `true` to have `02_aws_setup.yml` create the network and IAM profile from scratch
   (see [AWS networking and IAM mode](#aws-networking-and-iam-mode) above)
 - When `aws_create_network_resources: false`: `aws_ec2_vpc_subnet_id`,
-  `aws_ec2_security_group_ids`, `aws_ec2_iam_instance_profile`
+  `aws_ec2_security_group_ids`, `aws_ec2_iam_instance_profile`; set
+  `aws_ec2_assign_public_ip: true` if the subnet is public and you want the
+  instance to receive a public IP (the module does not always inherit the
+  subnet's `MapPublicIpOnLaunch` setting)
 - `demo_project_scm_url`
 
 Edit `vault.yml` (after encrypting) and set:
@@ -183,10 +186,15 @@ ansible-playbook playbooks/setup/01_azure_setup.yml --vault-id @prompt
 ansible-playbook playbooks/setup/02_aws_setup.yml --vault-id @prompt
 ```
 
-After `02_aws_setup.yml` completes, the playbook prints:
+After `02_aws_setup.yml` completes, the playbook prints four values that must be
+copied into `demo_variables.yml`:
 
-- **EC2 instance ID** — copy this value into `aws_ssm_target_instance_id` in `demo_variables.yml`
-- **Maintenance window ID** — copy into `aws_ssm_maintenance_window_id`
+| Printed value | Variable |
+|---|---|
+| EC2 instance ID | `aws_ssm_target_instance_id` |
+| Maintenance window ID | `aws_ssm_maintenance_window_id` |
+| AWS account ID | `aws_account_id` |
+| SSM service role ARN | `aws_ssm_service_role_arn` |
 
 Alternatively, launch the `WF - Demo setup` workflow from the Controller UI after
 applying CasC (Step 5).
