@@ -47,7 +47,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | Setup - AWS SSM resources | Not tested | — | |
 | Teardown - Azure runbook | Not tested | — | |
 | Teardown - AWS SSM resources | Not tested | — | |
-| Azure - Run Runbook and collect output | Not tested | — | |
+| Azure - Run Runbook and collect output | Pass | 2026-06-22 | `failed=0`; runbook output confirmed end-to-end |
 | Azure - Schedule Runbook | Not tested | — | |
 | AWS - Run SSM document and collect output | Not tested | — | |
 | AWS - Schedule SSM via maintenance window | Not tested | — | |

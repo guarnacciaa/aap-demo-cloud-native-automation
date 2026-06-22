@@ -25,6 +25,14 @@ options:
 
 dependencies:
   galaxy: requirements.yml
+  python:
+    - boto3
+    - botocore
+    - azure-identity
+    # awscli v1 via pip — installs the aws binary to /usr/local/bin/aws.
+    # awscli [platform:rpm] is not available in standard RHEL9 repositories;
+    # pip is the reliable cross-platform installation method for this EE.
+    - awscli
 
 # ansible.cfg carries the Automation Hub token needed to pull certified content.
 additional_build_files:
