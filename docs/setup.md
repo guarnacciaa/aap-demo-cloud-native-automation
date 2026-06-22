@@ -166,16 +166,35 @@ Edit `vault.yml` (after encrypting) and set:
 
 ## Step 3 — Build and push the custom Execution Environment
 
-The SSM playbooks require `awscli` inside the EE. Build from the provided
-`context/execution-environment.yml`:
+The demo job templates require a custom EE with `awscli`, `boto3`, `amazon.aws`,
+and `azure.azcollection`. Install `ansible-builder` if not already present:
 
 ```bash
-cd context
-ansible-builder build -f execution-environment.yml -t ee-cloud-native-automation:latest
+pip3 install ansible-builder
 ```
 
-Push the image to your registry and update `demo_execution_environment_name` in
-`demo_variables.yml` if the image name differs.
+Build and push from the artifact root (not from `context/`). Replace
+`<PAH-HOST>` with your Private Automation Hub hostname:
+
+```bash
+# Build (requires access to registry.redhat.io and cloud.redhat.com)
+ansible-builder build \
+  -f context/execution-environment.yml \
+  -t <PAH-HOST>/ee-cloud-native-automation:latest \
+  --container-runtime podman
+
+# Push to Private Automation Hub
+podman push <PAH-HOST>/ee-cloud-native-automation:latest
+```
+
+Then set the image URL in `demo_variables.yml`:
+
+```yaml
+demo_execution_environment_image: <PAH-HOST>/ee-cloud-native-automation:latest
+```
+
+`aap_config.yml` (Step 5) registers this URL in Controller and creates the PAH
+Container Registry credential used to pull the image at job execution time.
 
 ## Step 4 — Run setup playbooks
 
