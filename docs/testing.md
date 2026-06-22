@@ -10,7 +10,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
-| CasC apply (`aap_config.yml`) | Not tested | — | `02_aws_setup.yml` outputs now available; ready to test |
+| CasC apply (`aap_config.yml`) | Pass | 2026-06-22 | `failed=0 changed=23`; fixes applied: Azure credential field names (`subscription`/`client`/`secret`), workflow nodes rewritten to `simplified_workflow_nodes` format |
 | CasC cleanup (`aap_cleanup.yml`) | Not tested | — | |
 | Smoke test (`verify.yml`) | Not tested | — | |
 
@@ -67,4 +67,5 @@ Tracks testing progress for this demo. Update after each session. For procedural
 ## Open issues
 
 - **Fixed 2026-06-20**: Azure Automation Account ARM body used wrong structure for API `2024-10-23` (`sku` was at top level, must be inside `properties`) and invalid SKU value (`Free` → `Basic`). Fixed in `01_azure_setup.yml`.
-- **Fixed 2026-06-22**: `02_aws_setup.yml` now passes (create-from-scratch, local run). Four fixes applied across this session: (1) `key_name` omitted when `CHANGE_ME`; (2) IAM instance profile propagation pause after role creation; (3) `assign_public_ip: true` explicitly set in create-from-scratch mode; (4) `user_data` bootstrap uses direct S3 RPM URL instead of `dnf install amazon-ssm-agent` (package not in standard RHEL repos). Outputs copied to `demo_variables.yml`; `aap_config.yml` unblocked.
+- **Fixed 2026-06-22**: `02_aws_setup.yml` now passes (create-from-scratch, local run). Four fixes applied: (1) `key_name` omitted when `CHANGE_ME`; (2) IAM instance profile propagation pause after role creation; (3) `assign_public_ip: true` explicitly set in create-from-scratch mode; (4) `user_data` bootstrap uses direct S3 RPM URL instead of `dnf install amazon-ssm-agent` (package not in standard RHEL repos). Outputs copied to `demo_variables.yml`.
+- **Fixed 2026-06-22**: `aap_config.yml` now passes. Two CasC fixes: (1) Azure credential inputs renamed to AAP field names (`subscription_id`→`subscription`, `client_id`→`client`, `client_secret`→`secret`); (2) `workflow_templates.yml` rewritten from `workflow_nodes` dict format to `simplified_workflow_nodes` string format to avoid `KeyError: 'type'` in the `ansible.controller` module.
