@@ -394,11 +394,17 @@
         user_data: |
           #!/bin/bash
           # Install and start the SSM agent on first boot.
-          # Covers Amazon Linux 2023/2 (dnf/yum), RHEL/CentOS (yum/dnf), and Ubuntu (snap).
+          # RHEL and its derivatives (Rocky, AlmaLinux, CentOS Stream) do not ship
+          # amazon-ssm-agent in their standard repositories; the RPM must be fetched
+          # directly from the AWS S3 endpoint. Amazon Linux 2023/2 does have the
+          # package in its repos, so dnf/yum install works there as a fallback.
+          # The S3 URL serves the x86_64 build; change linux_amd64 to linux_arm64
+          # if the instance type uses an ARM processor (e.g. t4g, m7g).
+          SSM_RPM="https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm"
           if command -v dnf &>/dev/null; then
-              dnf install -y amazon-ssm-agent
+              dnf install -y "$SSM_RPM" 2>/dev/null || dnf install -y amazon-ssm-agent
           elif command -v yum &>/dev/null; then
-              yum install -y amazon-ssm-agent
+              yum install -y "$SSM_RPM" 2>/dev/null || yum install -y amazon-ssm-agent
           elif command -v apt-get &>/dev/null; then
               snap install amazon-ssm-agent --classic 2>/dev/null || apt-get install -y amazon-ssm-agent
           fi
