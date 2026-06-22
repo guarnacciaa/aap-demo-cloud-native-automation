@@ -45,15 +45,19 @@
       tags:
         - always
 
-    - name: Compute effective schedule start time (now + 10 minutes)
+    - name: Compute effective schedule start time and job schedule UUID
       # Azure rejects a schedule whose startTime is less than 5 minutes ahead.
       # Extra vars in AAP have higher precedence than set_fact, so overriding
-      # azure_schedule_start_time directly does not work when it is defined as
-      # an extra var or a stale demo_variables.yml value. A separate internal
-      # variable (_azure_effective_start_time) avoids the precedence conflict
-      # and is always computed fresh at task execution time.
+      # azure_schedule_start_time directly does not work. A separate internal
+      # variable (_azure_effective_start_time) avoids the precedence conflict.
+      #
+      # The jobSchedules ARM endpoint requires a UUID as the resource ID —
+      # passing a human-readable name like poc-runbook-schedule returns 404.
+      # A deterministic UUID derived from the schedule name ensures idempotency:
+      # re-running the playbook with the same schedule name produces the same UUID.
       ansible.builtin.set_fact:
         _azure_effective_start_time: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(ansible_date_time.epoch | int + 600) }}"
+        _azure_job_schedule_uuid: "{{ azure_job_schedule_name | to_uuid }}"
       tags:
         - always
 
@@ -100,9 +104,13 @@
         - schedule
 
     - name: Link runbook to schedule via Azure Automation job schedule
+      # The jobSchedules ARM endpoint requires a UUID as the resource ID.
+      # Using the schedule name as the ID returns 404 regardless of API version.
+      # _azure_job_schedule_uuid is a deterministic UUID derived from the
+      # schedule name — idempotent across re-runs with the same schedule name.
       ansible.builtin.uri:
         url: >-
-          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobSchedules/{{ azure_job_schedule_name }}?api-version={{ azure_arm_api_version }}
+          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobSchedules/{{ _azure_job_schedule_uuid }}?api-version={{ azure_arm_api_version }}
         method: PUT
         headers:
           Authorization: "Bearer {{ azure_token.json.access_token }}"
