@@ -181,6 +181,12 @@ aws_ec2_security_group_ids:
 # IAM instance profile that grants the EC2 instance AmazonSSMManagedInstanceCore.
 # Create this profile in IAM before running 02_aws_setup.yml.
 aws_ec2_iam_instance_profile: CHANGE_ME
+# Set true when the bring-your-own subnet is a public subnet and you want the
+# instance to receive a public IP. The ec2_instance module does not always inherit
+# the subnet's map_public_ip_on_launch attribute at launch time.
+# In create-from-scratch mode this is always true (the setup playbook creates a
+# public subnet with an internet gateway); this variable has no effect in that mode.
+aws_ec2_assign_public_ip: false
 
 # --- Create-from-scratch network (aws_create_network_resources: true) ---
 # Names and CIDR blocks for resources provisioned by 02_aws_setup.yml.

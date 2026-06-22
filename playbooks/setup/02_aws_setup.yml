@@ -243,6 +243,20 @@
         - aws
         - iam
 
+    - name: Wait for IAM instance profile to propagate before EC2 launch
+      # IAM changes propagate asynchronously; launching an EC2 instance immediately
+      # after creating the instance profile can result in the EC2 service not
+      # recognising the profile, which silently prevents SSM agent from obtaining
+      # credentials on first boot. Only pauses when the role was just created.
+      ansible.builtin.pause:
+        seconds: 15
+      when:
+        - aws_create_network_resources | default(false) | bool
+        - aws_iam_role_result is changed
+      tags:
+        - aws
+        - iam
+
     # Resolve all mode-dependent launch parameters into a single set of facts
     # consumed by the EC2 task and the output section below.
     # This avoids duplicating the ec2_instance task and the set_stats task.
@@ -264,6 +278,10 @@
           {{ aws_ssm_service_role_result.iam_role.arn
              if (aws_create_network_resources | default(false) | bool)
              else aws_ssm_service_role_arn }}
+        ec2_launch_assign_public_ip: >-
+          {{ true
+             if (aws_create_network_resources | default(false) | bool)
+             else (aws_ec2_assign_public_ip | default(false)) }}
       tags:
         - aws
         - ec2
@@ -355,6 +373,11 @@
       # SSM-only access does not require a key pair.
       # user_data installs and starts the SSM agent as a safety net for AMIs where the
       # agent is absent or disabled; it is harmless on AMIs where the agent already runs.
+      # network.assign_public_ip is true in create-from-scratch mode because the subnet
+      # is a public subnet with an internet gateway; the ec2_instance module does not
+      # always inherit the subnet's map_public_ip_on_launch attribute at launch time.
+      # In bring-your-own mode it defaults to false — set aws_ec2_assign_public_ip: true
+      # in demo_variables.yml when the target subnet is also public.
       amazon.aws.ec2_instance:
         name: "{{ aws_ec2_instance_name }}"
         instance_type: "{{ aws_ec2_instance_type }}"
@@ -366,6 +389,8 @@
              else omit }}
         security_groups: "{{ ec2_launch_sg_ids }}"
         iam_instance_profile: "{{ ec2_launch_iam_profile }}"
+        network:
+          assign_public_ip: "{{ ec2_launch_assign_public_ip }}"
         user_data: |
           #!/bin/bash
           # Install and start the SSM agent on first boot.
