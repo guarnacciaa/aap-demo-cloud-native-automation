@@ -18,7 +18,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
-| EE build and push | Not tested | — | |
+| EE build and push | Pass | 2026-06-22 | Built with ee-supported-rhel9/Python 3.12 and pushed to PAH; awscli installed via pip (not RPM — not in standard RHEL9 repos) |
 
 ### Inventories
 
@@ -49,7 +49,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | Teardown - AWS SSM resources | Not tested | — | |
 | Azure - Run Runbook and collect output | Pass | 2026-06-22 | `failed=0`; runbook output confirmed end-to-end |
 | Azure - Schedule Runbook | Not tested | — | |
-| AWS - Run SSM document and collect output | Not tested | — | |
+| AWS - Run SSM document and collect output | Pass | 2026-06-22 | `failed=0`; SSM Automation executed on EC2 target and collected outputs |
 | AWS - Schedule SSM via maintenance window | Not tested | — | |
 | Notify - Email automation results | Not tested | — | |
 
@@ -59,9 +59,9 @@ Tracks testing progress for this demo. Update after each session. For procedural
 |---|---|---|---|
 | WF - Demo setup | Not tested | — | |
 | WF - Demo teardown | Not tested | — | |
-| WF - Azure Runbook execute and collect | Not tested | — | |
+| WF - Azure Runbook execute and collect | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
 | WF - Azure Runbook schedule | Not tested | — | |
-| WF - AWS SSM document execute and collect | Not tested | — | |
+| WF - AWS SSM document execute and collect | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
 | WF - AWS SSM schedule via maintenance window | Not tested | — | |
 
 ## Open issues

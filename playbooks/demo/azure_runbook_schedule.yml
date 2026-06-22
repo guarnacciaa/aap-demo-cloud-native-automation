@@ -63,7 +63,31 @@
         - azure
         - auth
 
-    - name: Create or update Azure Automation job schedule
+    - name: Create Azure Automation schedule (recurrence definition)
+      # The Schedule object must exist before the Job Schedule that references it.
+      # Creating the Job Schedule first results in a 404 from the ARM API.
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/schedules/{{ azure_job_schedule_name }}-schedule?api-version={{ azure_arm_api_version }}
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          properties:
+            startTime: "{{ azure_schedule_start_time }}"
+            interval: "{{ azure_schedule_interval | int }}"
+            frequency: "{{ azure_schedule_frequency }}"
+            timeZone: UTC
+        status_code:
+          - 200
+          - 201
+      tags:
+        - azure
+        - schedule
+
+    - name: Link runbook to schedule via Azure Automation job schedule
       ansible.builtin.uri:
         url: >-
           https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobSchedules/{{ azure_job_schedule_name }}?api-version={{ azure_arm_api_version }}
@@ -82,28 +106,6 @@
           - 200
           - 201
       register: azure_schedule
-      tags:
-        - azure
-        - schedule
-
-    - name: Create linked schedule resource (OneTime/recurrence definition)
-      ansible.builtin.uri:
-        url: >-
-          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/schedules/{{ azure_job_schedule_name }}-schedule?api-version={{ azure_arm_api_version }}
-        method: PUT
-        headers:
-          Authorization: "Bearer {{ azure_token.json.access_token }}"
-          Content-Type: application/json
-        body_format: json
-        body:
-          properties:
-            startTime: "{{ azure_schedule_start_time }}"
-            interval: "{{ azure_schedule_interval | int }}"
-            frequency: "{{ azure_schedule_frequency }}"
-            timeZone: UTC
-        status_code:
-          - 200
-          - 201
       tags:
         - azure
         - schedule
