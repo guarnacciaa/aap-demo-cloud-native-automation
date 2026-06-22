@@ -20,11 +20,13 @@ controller_workflows:
           organization:
             name: "{{ demo_organization_name }}"
           name: Setup - Azure runbook
+          type: job
       - identifier: setup_aws
         unified_job_template:
           organization:
             name: "{{ demo_organization_name }}"
           name: Setup - AWS SSM resources
+          type: job
         related:
           - identifier: setup_azure
             type: success
@@ -45,11 +47,13 @@ controller_workflows:
           organization:
             name: "{{ demo_organization_name }}"
           name: Teardown - Azure runbook
+          type: job
       - identifier: teardown_aws
         unified_job_template:
           organization:
             name: "{{ demo_organization_name }}"
           name: Teardown - AWS SSM resources
+          type: job
         related:
           - identifier: teardown_azure
             type: success
@@ -69,11 +73,13 @@ controller_workflows:
           organization:
             name: "{{ demo_organization_name }}"
           name: Azure - Run Runbook and collect output
+          type: job
       - identifier: notify
         unified_job_template:
           organization:
             name: "{{ demo_organization_name }}"
           name: Notify - Email automation results
+          type: job
         related:
           - identifier: run_runbook
             type: success
@@ -90,6 +96,7 @@ controller_workflows:
           organization:
             name: "{{ demo_organization_name }}"
           name: Azure - Schedule Runbook
+          type: job
 
   - name: WF - AWS SSM document execute and collect
     organization: "{{ demo_organization_name }}"
@@ -103,11 +110,13 @@ controller_workflows:
           organization:
             name: "{{ demo_organization_name }}"
           name: AWS - Run SSM document and collect output
+          type: job
       - identifier: notify
         unified_job_template:
           organization:
             name: "{{ demo_organization_name }}"
           name: Notify - Email automation results
+          type: job
         related:
           - identifier: run_ssm
             type: success
@@ -124,3 +133,4 @@ controller_workflows:
           organization:
             name: "{{ demo_organization_name }}"
           name: AWS - Schedule SSM via maintenance window
+          type: job
