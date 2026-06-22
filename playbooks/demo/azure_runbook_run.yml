@@ -36,7 +36,7 @@
           scope: https://management.azure.com/.default
         status_code: 200
       register: azure_token
-      no_log: "{{ demo_no_log | default(true) }}"
+      no_log: "{{ demo_no_log | default(false) }}"
       tags:
         - azure
         - auth

@@ -43,6 +43,6 @@
         subject: "AAP multicloud automation results"
         body: "{{ notification_body }}"
         secure: starttls
-      no_log: "{{ demo_no_log | default(true) }}"
+      no_log: "{{ demo_no_log | default(false) }}"
       tags:
         - notify
