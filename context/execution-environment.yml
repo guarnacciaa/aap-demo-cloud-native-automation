@@ -1,22 +1,50 @@
 ---
+# Build a custom EE when the platform default lacks Azure/AWS SDK dependencies.
+# See docs/setup.md for ansible-builder instructions.
+#
+# ee-supported-rhel9 provides Python 3.12 and Ansible.
+# Both ee-minimal-rhel9 and ee-supported-rhel9 use microdnf, not dnf — the
+# package_manager_path override is required or the assemble script fails.
+#
+# In EE spec v3, the assemble script (pip install of collection Python deps)
+# runs in the BUILDER stage. gcc and all C headers must therefore be installed
+# in prepend_builder, not prepend_final.
 version: 3
+
 build_arg_defaults:
   ANSIBLE_GALAXY_CLI_COLLECTION_OPTS: "-v"
+
+images:
+  base_image:
+    name: registry.redhat.io/ansible-automation-platform-27/ee-supported-rhel9:latest
+
+options:
+  # ee-supported-rhel9 ships microdnf, not full dnf; ansible-builder's assemble
+  # script calls /usr/bin/dnf by default and fails without this override.
+  package_manager_path: /usr/bin/microdnf
+
 dependencies:
-  galaxy:
-    collections:
-      - name: infra.aap_configuration
-        source: https://cloud.redhat.com/api/automation-hub/
-      - name: azure.azcollection
-        source: https://cloud.redhat.com/api/automation-hub/
-      - name: amazon.aws
-        source: https://cloud.redhat.com/api/automation-hub/
-      - name: community.general
-        source: https://cloud.redhat.com/api/automation-hub/
-  python:
-    - boto3
-    - botocore
-    - azure-identity
-  python_bin: /usr/bin/python3
-  system:
-    - awscli [platform:rpm]
+  galaxy: requirements.yml
+
+# ansible.cfg carries the Automation Hub token needed to pull certified content.
+additional_build_files:
+  - src: ../ansible.cfg
+    dest: configs
+
+additional_build_steps:
+  prepend_galaxy:
+    # Install certified collections using the Hub server_list and token from
+    # the local ansible.cfg copied above.
+    - COPY _build/configs/ansible.cfg /etc/ansible/ansible.cfg
+  prepend_builder:
+    # Python 3.12 is the active interpreter in ee-supported-rhel9; override
+    # PYCMD so pip and assemble target the correct runtime. gcc and C headers
+    # are required here (not in prepend_final) because assemble runs in this stage.
+    - ENV PYCMD=/usr/bin/python3.12
+    - RUN microdnf install -y gcc krb5-devel systemd-devel dbus-devel glib2-devel python3.12-devel && microdnf clean all
+  prepend_final:
+    # Mirror PYCMD override for check_ansible; no compilation happens in this stage.
+    - ENV PYCMD=/usr/bin/python3.12
+  append_final:
+    # Remove ansible.cfg from the final image — it may contain Hub tokens.
+    - RUN rm -f /etc/ansible/ansible.cfg

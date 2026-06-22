@@ -1,0 +1,11 @@
+---
+# Collections installed inside the custom EE for demo playbook execution.
+# infra.aap_configuration is used only for local CasC runs; omit from the EE
+# to keep the image size down.
+# Do not set per-collection source URLs here; ansible-galaxy resolves servers
+# from ../ansible.cfg (automation_hub_certified / automation_hub_validated).
+collections:
+  - name: amazon.aws
+  - name: azure.azcollection
+  - name: community.general
+  - name: ansible.controller

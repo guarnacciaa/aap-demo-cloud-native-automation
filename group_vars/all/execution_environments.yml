@@ -1,8 +1,14 @@
 ---
+# Build the custom EE from context/execution-environment.yml and push it to
+# Private Automation Hub before running aap_config.yml. Set
+# demo_execution_environment_image and hub_registry_host in demo_variables.yml.
 controller_execution_environments:
   - name: "{{ demo_execution_environment_name }}"
     organization: "{{ demo_organization_name }}"
-    image: quay.io/ansible/ansible-runner:latest
+    image: "{{ demo_execution_environment_image }}"
+    pull: missing
+    credential: "{{ hub_registry_credential_name }}"
     description: >-
-      EE with awscli for SSM CLI automation. Replace with image built from
-      context/execution-environment.yml.
+      Custom EE with awscli, boto3, amazon.aws, and azure.azcollection.
+      Build from context/execution-environment.yml and push to Private
+      Automation Hub (see docs/setup.md).

@@ -12,7 +12,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 |---|---|---|---|
 | CasC apply (`aap_config.yml`) | Pass | 2026-06-22 | `failed=0 changed=23`; fixes applied: Azure credential field names (`subscription`/`client`/`secret`), workflow nodes rewritten to `simplified_workflow_nodes` format |
 | CasC cleanup (`aap_cleanup.yml`) | Not tested | — | |
-| Smoke test (`verify.yml`) | Not tested | — | |
+| Smoke test (`verify.yml`) | Pass | 2026-06-22 | `failed=0`; confirms awscli, boto3, and required variables present |
 
 ### Execution environments
 
