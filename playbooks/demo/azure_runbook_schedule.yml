@@ -2,7 +2,7 @@
 ---
 - name: Schedule Azure Automation runbook execution
   hosts: localhost
-  gather_facts: false
+  gather_facts: true
   collections:
     - ansible.builtin
 
@@ -42,6 +42,19 @@
              if (azure_client_secret | default('')) | length > 0
              else lookup('env', 'AZURE_SECRET') }}
       no_log: "{{ demo_no_log | default(false) }}"
+      tags:
+        - always
+
+    - name: Ensure schedule start time is at least 10 minutes in the future
+      # Azure rejects a schedule whose start time is less than 5 minutes ahead.
+      # If the configured azure_schedule_start_time is in the past (or unset),
+      # override it with now + 10 minutes so the demo always runs without editing
+      # demo_variables.yml before each run.
+      ansible.builtin.set_fact:
+        azure_schedule_start_time: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(ansible_date_time.epoch | int + 600) }}"
+      when: >-
+        (azure_schedule_start_time | default('')) | length == 0 or
+        (azure_schedule_start_time < ansible_date_time.iso8601_basic_short)
       tags:
         - always
 
