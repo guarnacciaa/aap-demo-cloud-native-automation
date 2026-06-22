@@ -174,7 +174,7 @@ pip3 install ansible-builder
 ```
 
 Build and push from the artifact root (not from `context/`). Replace
-`<PAH-HOST>` with your Private Automation Hub hostname:
+`<PAH-HOST>` with your Private Automation Hub hostname or IP:
 
 ```bash
 # Build (requires access to registry.redhat.io and cloud.redhat.com)
@@ -183,8 +183,11 @@ ansible-builder build \
   -t <PAH-HOST>/ee-cloud-native-automation:latest \
   --container-runtime podman
 
+# Authenticate to PAH (add --tls-verify=false for self-signed certificates)
+podman login <PAH-HOST> --tls-verify=false
+
 # Push to Private Automation Hub
-podman push <PAH-HOST>/ee-cloud-native-automation:latest
+podman push <PAH-HOST>/ee-cloud-native-automation:latest --tls-verify=false
 ```
 
 Then set the image URL in `demo_variables.yml`:

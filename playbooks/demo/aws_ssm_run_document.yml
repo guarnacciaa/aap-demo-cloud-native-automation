@@ -13,9 +13,10 @@
     aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | mandatory }}"
 
   environment:
-    AWS_ACCESS_KEY_ID: "{{ aws_access_key }}"
-    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_key }}"
-    AWS_DEFAULT_REGION: "{{ aws_region }}"
+    # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are injected automatically by
+    # the AAP Amazon Web Services credential; do not redeclare them here or the
+    # play fails when aws_access_key is undefined in the AAP execution context.
+    AWS_DEFAULT_REGION: "{{ aws_region | default('us-east-1') }}"
 
   tasks:
     - name: Start SSM Automation execution for target instance
