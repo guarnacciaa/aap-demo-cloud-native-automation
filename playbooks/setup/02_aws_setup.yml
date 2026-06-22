@@ -63,6 +63,23 @@
       tags:
         - always
 
+    - name: Validate EC2 AMI ID is set
+      # Fails fast before any AWS call — avoids a 10-minute wait for SSM registration
+      # that will never succeed if the AMI ID was never filled in.
+      # Use an Amazon Linux 2023 or RHEL AMI; SSM agent bootstrap in user_data handles
+      # the case where the agent is not pre-installed on the chosen AMI.
+      ansible.builtin.assert:
+        that:
+          - aws_ec2_ami_id is defined
+          - aws_ec2_ami_id != "CHANGE_ME"
+        fail_msg: >-
+          aws_ec2_ami_id must be set to a valid AMI ID for region {{ aws_region }}.
+          Recommended: use an Amazon Linux 2023 or RHEL AMI that includes SSM agent.
+          Look up current AMIs at:
+          https://console.aws.amazon.com/ec2/v2/home#Images:visibility=public-images
+      tags:
+        - always
+
   tasks:
     # =========================================================================
     # 0a. Always: retrieve AWS account ID from STS
@@ -336,6 +353,8 @@
       # resolved above from either the bring-your-own or create-from-scratch mode.
       # key_name is omitted when aws_ec2_key_name is unset or left as CHANGE_ME;
       # SSM-only access does not require a key pair.
+      # user_data installs and starts the SSM agent as a safety net for AMIs where the
+      # agent is absent or disabled; it is harmless on AMIs where the agent already runs.
       amazon.aws.ec2_instance:
         name: "{{ aws_ec2_instance_name }}"
         instance_type: "{{ aws_ec2_instance_type }}"
@@ -347,6 +366,19 @@
              else omit }}
         security_groups: "{{ ec2_launch_sg_ids }}"
         iam_instance_profile: "{{ ec2_launch_iam_profile }}"
+        user_data: |
+          #!/bin/bash
+          # Install and start the SSM agent on first boot.
+          # Covers Amazon Linux 2023/2 (dnf/yum), RHEL/CentOS (yum/dnf), and Ubuntu (snap).
+          if command -v dnf &>/dev/null; then
+              dnf install -y amazon-ssm-agent
+          elif command -v yum &>/dev/null; then
+              yum install -y amazon-ssm-agent
+          elif command -v apt-get &>/dev/null; then
+              snap install amazon-ssm-agent --classic 2>/dev/null || apt-get install -y amazon-ssm-agent
+          fi
+          systemctl enable amazon-ssm-agent
+          systemctl start amazon-ssm-agent
         state: running
         wait: true
         tags:
@@ -365,23 +397,47 @@
         - aws
         - ec2
 
+    # Block/rescue so a timeout produces actionable diagnostics rather than a raw
+    # JSON dump. The SSM agent registers asynchronously after boot; 20 retries ×
+    # 30 s = 10 minutes is enough for most AMIs. If it expires, common causes are:
+    #   1. AMI did not have SSM agent and user_data bootstrap failed (check /var/log/cloud-init-output.log).
+    #   2. IAM instance profile lacks AmazonSSMManagedInstanceCore.
+    #   3. Outbound HTTPS (port 443) to ssm.REGION.amazonaws.com is blocked.
     - name: Wait for SSM agent to register the instance
-      # The SSM agent registers asynchronously after boot — poll until the instance
-      # appears in SSM managed-instance inventory before proceeding.
-      ansible.builtin.command:
-        cmd: >-
-          aws ssm describe-instance-information
-          --filters Key=InstanceIds,Values={{ provisioned_instance_id }}
-          --region {{ aws_region }}
-          --output json
-      register: ssm_agent_check
-      until: (ssm_agent_check.stdout | from_json).InstanceInformationList | length > 0
-      retries: 20
-      delay: 30
-      changed_when: false
-      tags:
-        - aws
-        - ec2
+      block:
+        - name: Poll SSM managed-instance inventory until agent appears
+          ansible.builtin.command:
+            cmd: >-
+              aws ssm describe-instance-information
+              --filters Key=InstanceIds,Values={{ provisioned_instance_id }}
+              --region {{ aws_region }}
+              --output json
+          register: ssm_agent_check
+          until: (ssm_agent_check.stdout | from_json).InstanceInformationList | length > 0
+          retries: 20
+          delay: 30
+          changed_when: false
+          tags:
+            - aws
+            - ec2
+      rescue:
+        - name: SSM agent registration timed out — print diagnostic checklist
+          ansible.builtin.fail:
+            msg:
+              - "SSM agent did not register for instance {{ provisioned_instance_id }} after 10 minutes."
+              - "Run these checks before retrying:"
+              - "  1. SSM agent bootstrap: connect via EC2 Instance Connect and check"
+              - "       sudo systemctl status amazon-ssm-agent"
+              - "       sudo cat /var/log/cloud-init-output.log | tail -30"
+              - "  2. IAM instance profile: verify AmazonSSMManagedInstanceCore is attached to"
+              - "       {{ ec2_launch_iam_profile }}"
+              - "  3. Outbound connectivity: the instance must reach port 443 on"
+              - "       ssm.{{ aws_region }}.amazonaws.com (check the security group and route table)."
+              - "  4. Confirm the instance is actually running:"
+              - "       aws ec2 describe-instances --instance-ids {{ provisioned_instance_id }} --region {{ aws_region }} --query 'Reservations[].Instances[].State'"
+          tags:
+            - aws
+            - ec2
 
     # =========================================================================
     # 3. Maintenance window
