@@ -7,10 +7,15 @@
     - ansible.builtin
 
   vars:
-    azure_subscription_id: "{{ azure_subscription_id | mandatory }}"
-    azure_tenant_id: "{{ azure_tenant_id | mandatory }}"
-    azure_client_id: "{{ azure_client_id | mandatory }}"
-    azure_client_secret: "{{ azure_client_secret | mandatory }}"
+    # When running locally, these come from demo_variables.yml (vault mappings).
+    # When running as an AAP job template with the Azure Service Principal
+    # credential attached, AAP injects AZURE_SUBSCRIPTION_ID, AZURE_CLIENT_ID,
+    # AZURE_SECRET, and AZURE_TENANT as environment variables — use those as
+    # fallbacks so the playbook works in both execution contexts.
+    azure_subscription_id: "{{ azure_subscription_id | default(lookup('env', 'AZURE_SUBSCRIPTION_ID')) }}"
+    azure_tenant_id: "{{ azure_tenant_id | default(lookup('env', 'AZURE_TENANT')) }}"
+    azure_client_id: "{{ azure_client_id | default(lookup('env', 'AZURE_CLIENT_ID')) }}"
+    azure_client_secret: "{{ azure_client_secret | default(lookup('env', 'AZURE_SECRET')) }}"
     azure_automation_resource_group: "{{ azure_automation_resource_group | mandatory }}"
     azure_automation_account: "{{ azure_automation_account | mandatory }}"
     azure_runbook_name: "{{ azure_runbook_name | mandatory }}"
