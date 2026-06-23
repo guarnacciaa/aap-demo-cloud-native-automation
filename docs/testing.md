@@ -36,7 +36,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | `01_azure_setup.yml` (bring-your-own) | Not tested | — | |
 | `02_aws_setup.yml` (create-from-scratch) | Partial | 2026-06-22 | Passes locally; fixes applied: key_name CHANGE_ME omit, IAM propagation pause, assign_public_ip, user_data S3 RPM for RHEL AMIs. Bring-your-own mode and AAP job template not yet tested. |
 | `02_aws_setup.yml` (bring-your-own) | Not tested | — | |
-| `01_azure_teardown.yml` | Not tested | — | Fixed 2026-06-23: added job schedule link + schedule deletion before runbook deletion (BYO mode gap) |
+| `01_azure_teardown.yml` | Not tested | — | Fixed 2026-06-23: added job schedule link + schedule deletion (BYO mode gap); added Azure credential resolution pre_task for AAP job template mode |
 | `02_aws_teardown.yml` | Not tested | — | |
 
 ### Job templates
@@ -66,6 +66,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 ## Open issues
 
+- **Fixed 2026-06-23**: `01_azure_teardown.yml` and `01_azure_setup.yml` lacked the Azure credential resolution pre_task present in the demo playbooks. When run as AAP job templates, the controller injects Azure credentials as environment variables (`AZURE_TENANT`, `AZURE_CLIENT_ID`, `AZURE_SECRET`, `AZURE_SUBSCRIPTION_ID`) rather than Ansible variables; without the fallback the token request failed with a censored fatal error. Added the same `set_fact` resolution pre_task to both setup playbooks.
 - **Fixed 2026-06-23**: `01_azure_teardown.yml` did not clean up the Azure Automation schedule and job schedule link created by `azure_runbook_schedule.yml` in bring-your-own mode. Added explicit DELETE tasks for the job schedule link and schedule (with 404 handling) before the runbook deletion. In create-from-scratch mode the Automation Account deletion cascades these objects anyway.
 
 

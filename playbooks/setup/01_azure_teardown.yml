@@ -29,6 +29,35 @@
       tags:
         - always
 
+    - name: Resolve Azure credentials from AAP credential injection or Ansible variables
+      # When this playbook runs as an AAP job template with an Azure Service Principal
+      # credential attached, the controller injects AZURE_TENANT, AZURE_CLIENT_ID,
+      # AZURE_SECRET, and AZURE_SUBSCRIPTION_ID as environment variables rather than
+      # Ansible variables. This task resolves all four from whichever source is populated
+      # so the URI token request works in both local (vault) and AAP (credential) modes.
+      ansible.builtin.set_fact:
+        azure_subscription_id: >-
+          {{ azure_subscription_id
+             if (azure_subscription_id | default('')) | length > 0
+                and azure_subscription_id != 'CHANGE_ME'
+             else lookup('env', 'AZURE_SUBSCRIPTION_ID') }}
+        azure_tenant_id: >-
+          {{ azure_tenant_id
+             if (azure_tenant_id | default('')) | length > 0
+                and azure_tenant_id != 'CHANGE_ME'
+             else lookup('env', 'AZURE_TENANT') }}
+        azure_client_id: >-
+          {{ azure_client_id
+             if (azure_client_id | default('')) | length > 0
+             else lookup('env', 'AZURE_CLIENT_ID') }}
+        azure_client_secret: >-
+          {{ azure_client_secret
+             if (azure_client_secret | default('')) | length > 0
+             else lookup('env', 'AZURE_SECRET') }}
+      no_log: "{{ demo_no_log | default(true) }}"
+      tags:
+        - always
+
   tasks:
     - name: Obtain Azure AD access token for Resource Manager
       ansible.builtin.uri:
