@@ -1,7 +1,10 @@
-# Description: Delete Azure resources created by 01_azure_setup.yml.
-# Always removes the demo runbook.
+# Description: Delete Azure resources created by 01_azure_setup.yml and the demo scenario.
+# Always removes:
+#   - the job schedule link and schedule created by azure_runbook_schedule.yml (if run)
+#   - the demo runbook created by 01_azure_setup.yml
 # When azure_create_automation_account is true, also deletes the Automation Account
-# and resource group that were provisioned by the setup playbook.
+# and resource group that were provisioned by the setup playbook (cascades all remaining
+# objects, so the explicit schedule/runbook deletions above are redundant but harmless).
 # Requires demo_cleanup_confirm=true to prevent accidental deletion.
 # Run after aap_cleanup.yml has removed the Controller objects.
 ---
@@ -43,6 +46,69 @@
       tags:
         - azure
         - auth
+
+    # =========================================================================
+    # Clean up objects created by the azure_runbook_schedule.yml demo scenario.
+    # These objects live inside the Automation Account and must be explicitly
+    # removed in bring-your-own mode (the account itself is not deleted there).
+    # In create-from-scratch mode the account deletion cascades them, but
+    # removing them first is harmless — 404 is accepted on both tasks.
+    #
+    # Deletion order: job schedule link first (it references both the schedule
+    # and the runbook), then the schedule, then the runbook.
+    # =========================================================================
+
+    - name: Compute job schedule link UUID for teardown
+      # Reproduces the same UUID that azure_runbook_schedule.yml used when creating
+      # the job schedule link: azure_job_schedule_name | to_uuid.
+      # Required because the ARM job schedule endpoint uses the UUID as the resource name.
+      ansible.builtin.set_fact:
+        _azure_job_schedule_uuid: "{{ azure_job_schedule_name | to_uuid }}"
+      tags:
+        - azure
+        - teardown
+
+    - name: Delete Azure Automation job schedule link created by azure_runbook_schedule.yml
+      # The job schedule link binds the schedule to the runbook. It must be deleted
+      # before the schedule and the runbook because it holds references to both.
+      # 404 is acceptable — the link may not exist if the demo scenario was never run.
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account
+          }}/jobSchedules/{{ _azure_job_schedule_uuid }}?api-version={{ azure_arm_api_version }}
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+        status_code:
+          - 200
+          - 204
+          - 404
+      tags:
+        - azure
+        - teardown
+
+    - name: Delete Azure Automation schedule created by azure_runbook_schedule.yml
+      # The schedule (recurrence definition) is a separate resource from the job
+      # schedule link. It can only be deleted after the link that references it is gone.
+      # 404 is acceptable — the schedule may not exist if the scenario was never run.
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account
+          }}/schedules/{{ azure_job_schedule_name }}-schedule?api-version={{ azure_arm_api_version }}
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ azure_token.json.access_token }}"
+        status_code:
+          - 200
+          - 204
+          - 404
+      tags:
+        - azure
+        - teardown
 
     - name: Delete sample runbook from Automation Account
       # 404 is acceptable — runbook may already be gone or was never created.
@@ -110,7 +176,9 @@
     - name: Report Azure teardown completion
       ansible.builtin.debug:
         msg: >-
-          Runbook '{{ azure_runbook_name }}' removed from '{{ azure_automation_account }}'.
+          Job schedule link, schedule '{{ azure_job_schedule_name }}-schedule', and
+          runbook '{{ azure_runbook_name }}' removed from '{{ azure_automation_account }}'
+          (404 on any of these means the object was already absent — acceptable).
           {% if azure_create_automation_account | default(false) | bool %}
           Automation Account '{{ azure_automation_account }}' and resource group
           '{{ azure_automation_resource_group }}' deletion initiated (async — may take
