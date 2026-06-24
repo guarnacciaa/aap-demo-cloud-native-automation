@@ -13,6 +13,17 @@ controller_templates:
     credentials:
       - "{{ azure_credential_name }}"
     ask_variables_on_launch: true
+    extra_vars:
+      # Azure resource identity — required for ARM API calls and validation pre_tasks.
+      azure_automation_resource_group: "{{ azure_automation_resource_group }}"
+      azure_automation_account: "{{ azure_automation_account }}"
+      azure_create_automation_account: "{{ azure_create_automation_account }}"
+      azure_resource_group_location: "{{ azure_resource_group_location }}"
+      azure_automation_account_sku: "{{ azure_automation_account_sku }}"
+      # Runbook identity — used when creating the runbook object and uploading content.
+      azure_runbook_name: "{{ azure_runbook_name }}"
+      azure_runbook_description: "{{ azure_runbook_description }}"
+      demo_no_log: "{{ demo_no_log }}"
     labels:
       - "{{ demo_label_name }}"
 
@@ -25,6 +36,34 @@ controller_templates:
     credentials:
       - "{{ aws_credential_name }}"
     ask_variables_on_launch: true
+    extra_vars:
+      # Region and mode flag — required on every task.
+      aws_region: "{{ aws_region }}"
+      aws_create_network_resources: "{{ aws_create_network_resources }}"
+      # EC2 target instance identity.
+      aws_ec2_instance_name: "{{ aws_ec2_instance_name }}"
+      aws_ec2_instance_type: "{{ aws_ec2_instance_type }}"
+      aws_ec2_ami_id: "{{ aws_ec2_ami_id }}"
+      aws_ec2_key_name: "{{ aws_ec2_key_name }}"
+      # SSM document and maintenance window identity.
+      aws_ssm_document_name: "{{ aws_ssm_document_name }}"
+      demo_aws_maintenance_window_name: "{{ demo_aws_maintenance_window_name }}"
+      demo_aws_maintenance_window_schedule: "{{ demo_aws_maintenance_window_schedule }}"
+      # Bring-your-own network/IAM (used when aws_create_network_resources: false).
+      aws_ec2_vpc_subnet_id: "{{ aws_ec2_vpc_subnet_id }}"
+      aws_ec2_security_group_ids: "{{ aws_ec2_security_group_ids }}"
+      aws_ec2_iam_instance_profile: "{{ aws_ec2_iam_instance_profile }}"
+      aws_ssm_service_role_arn: "{{ aws_ssm_service_role_arn }}"
+      aws_ec2_assign_public_ip: "{{ aws_ec2_assign_public_ip }}"
+      # Create-from-scratch network/IAM names (used when aws_create_network_resources: true).
+      aws_vpc_name: "{{ aws_vpc_name }}"
+      aws_vpc_cidr: "{{ aws_vpc_cidr }}"
+      aws_subnet_name: "{{ aws_subnet_name }}"
+      aws_subnet_cidr: "{{ aws_subnet_cidr }}"
+      aws_sg_name: "{{ aws_sg_name }}"
+      aws_iam_role_name: "{{ aws_iam_role_name }}"
+      aws_ssm_service_role_name: "{{ aws_ssm_service_role_name }}"
+      demo_no_log: "{{ demo_no_log }}"
     labels:
       - "{{ demo_label_name }}"
 
@@ -42,7 +81,16 @@ controller_templates:
       - "{{ azure_credential_name }}"
     ask_variables_on_launch: true
     extra_vars:
+      # Safety guard — operator must override to true at launch time.
       demo_cleanup_confirm: false
+      # Azure resource identity — required for ARM API DELETE calls.
+      azure_automation_resource_group: "{{ azure_automation_resource_group }}"
+      azure_automation_account: "{{ azure_automation_account }}"
+      azure_create_automation_account: "{{ azure_create_automation_account }}"
+      azure_runbook_name: "{{ azure_runbook_name }}"
+      # Schedule identity — required to clean up objects created by azure_runbook_schedule.yml.
+      azure_job_schedule_name: "{{ azure_job_schedule_name }}"
+      demo_no_log: "{{ demo_no_log }}"
     labels:
       - "{{ demo_label_name }}"
 
@@ -56,7 +104,22 @@ controller_templates:
       - "{{ aws_credential_name }}"
     ask_variables_on_launch: true
     extra_vars:
+      # Safety guard — operator must override to true at launch time.
       demo_cleanup_confirm: false
+      # Region and mode flag — required on every task.
+      aws_region: "{{ aws_region }}"
+      aws_create_network_resources: "{{ aws_create_network_resources }}"
+      # Resource identities for the three always-deleted objects.
+      aws_ssm_maintenance_window_id: "{{ aws_ssm_maintenance_window_id }}"
+      aws_ec2_instance_name: "{{ aws_ec2_instance_name }}"
+      aws_ssm_document_name: "{{ aws_ssm_document_name }}"
+      # IAM and network names (used when aws_create_network_resources: true).
+      aws_iam_role_name: "{{ aws_iam_role_name }}"
+      aws_ssm_service_role_name: "{{ aws_ssm_service_role_name }}"
+      aws_vpc_name: "{{ aws_vpc_name }}"
+      aws_vpc_cidr: "{{ aws_vpc_cidr }}"
+      aws_sg_name: "{{ aws_sg_name }}"
+      demo_no_log: "{{ demo_no_log }}"
     labels:
       - "{{ demo_label_name }}"
 

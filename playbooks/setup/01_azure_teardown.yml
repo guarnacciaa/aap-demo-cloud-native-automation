@@ -91,6 +91,7 @@
       # Reproduces the same UUID that azure_runbook_schedule.yml used when creating
       # the job schedule link: azure_job_schedule_name | to_uuid.
       # Required because the ARM job schedule endpoint uses the UUID as the resource name.
+      # azure_job_schedule_name is passed as an explicit extra_var by the job template.
       ansible.builtin.set_fact:
         _azure_job_schedule_uuid: "{{ azure_job_schedule_name | to_uuid }}"
       tags:
