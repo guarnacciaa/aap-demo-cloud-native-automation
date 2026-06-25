@@ -10,7 +10,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
-| CasC apply (`aap_config.yml`) | Pass | 2026-06-22 | `failed=0 changed=23`; fixes applied: Azure credential field names (`subscription`/`client`/`secret`), workflow nodes rewritten to `simplified_workflow_nodes` format |
+| CasC apply (`aap_config.yml`) | Pass | 2026-06-25 | `failed=0 changed=9`; job templates updated with full extra_vars for setup/teardown templates |
 | CasC cleanup (`aap_cleanup.yml`) | Not tested | — | |
 | Smoke test (`verify.yml`) | Pass | 2026-06-22 | `failed=0`; confirms awscli, boto3, and required variables present |
 
@@ -36,7 +36,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | `01_azure_setup.yml` (bring-your-own) | Not tested | — | |
 | `02_aws_setup.yml` (create-from-scratch) | Partial | 2026-06-22 | Passes locally; fixes applied: key_name CHANGE_ME omit, IAM propagation pause, assign_public_ip, user_data S3 RPM for RHEL AMIs. Bring-your-own mode and AAP job template not yet tested. |
 | `02_aws_setup.yml` (bring-your-own) | Not tested | — | |
-| `01_azure_teardown.yml` | Not tested | — | Fixed 2026-06-23: added job schedule link + schedule deletion (BYO mode gap); added Azure credential resolution pre_task for AAP job template mode |
+| `01_azure_teardown.yml` | Pass | 2026-06-25 | `failed=0 ok=10`; job schedule link, schedule, runbook, account, and resource group all removed end-to-end (create-from-scratch mode) |
 | `02_aws_teardown.yml` | Not tested | — | |
 
 ### Job templates
@@ -45,7 +45,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 |---|---|---|---|
 | Setup - Azure runbook | Not tested | — | |
 | Setup - AWS SSM resources | Not tested | — | |
-| Teardown - Azure runbook | Not tested | — | |
+| Teardown - Azure runbook | Pass | 2026-06-25 | `failed=0 ok=10`; end-to-end pass as AAP job template |
 | Teardown - AWS SSM resources | Not tested | — | |
 | Azure - Run Runbook and collect output | Pass | 2026-06-22 | `failed=0`; runbook output confirmed end-to-end |
 | Azure - Schedule Runbook | Pass | 2026-06-22 | `failed=0`; fixes applied: task order (schedule before jobSchedule), UUID as jobScheduleId, dynamic start time (+10 min) |
