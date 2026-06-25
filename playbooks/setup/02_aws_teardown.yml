@@ -41,21 +41,40 @@
     # 1. Maintenance window
     # =========================================================================
 
-    - name: Delete maintenance window
-      # --reason flag is not supported on all CLI versions; omitted for compatibility.
+    - name: Look up maintenance window by name
+      # Look up by name rather than ID so teardown stays correct even when the
+      # setup was re-run (creating a new window with a new ID) without updating
+      # aws_ssm_maintenance_window_id in demo_variables.yml.
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm describe-maintenance-windows
+          --filters Key=Name,Values={{ demo_aws_maintenance_window_name }}
+          --region {{ aws_region }}
+          --output json
+      register: mw_lookup
+      changed_when: false
+      tags:
+        - aws
+        - maintenance-window
+
+    - name: Delete all maintenance windows matching the demo name
+      # Iterates over every window returned by the lookup — handles the case
+      # where multiple runs left behind more than one window with the same name.
+      # DoesNotExistException is accepted in case of a race condition.
       ansible.builtin.command:
         cmd: >-
           aws ssm delete-maintenance-window
-          --window-id {{ aws_ssm_maintenance_window_id }}
+          --window-id {{ item.WindowId }}
           --region {{ aws_region }}
           --output json
+      loop: "{{ (mw_lookup.stdout | from_json).WindowIdentities | default([]) }}"
+      loop_control:
+        label: "{{ item.WindowId }}"
       register: mw_delete
       changed_when: mw_delete.rc == 0
-      # DoesNotExistException means already deleted — acceptable.
       failed_when:
         - mw_delete.rc != 0
         - "'DoesNotExistException' not in mw_delete.stderr"
-      when: aws_ssm_maintenance_window_id != "CHANGE_ME"
       tags:
         - aws
         - maintenance-window
@@ -261,10 +280,21 @@
     - name: Report AWS teardown completion
       ansible.builtin.debug:
         msg: >-
-          AWS resources removed: EC2 instance '{{ aws_ec2_instance_name }}',
-          SSM document '{{ aws_ssm_document_name }}',
-          maintenance window '{{ aws_ssm_maintenance_window_id }}'.
-          {{ 'VPC, subnet, security group, internet gateway, route tables, EC2 IAM role/profile, and SSM service role also removed.' if (aws_create_network_resources | default(false) | bool) else 'Pre-existing network and IAM resources were not modified.' }}
+          EC2 instance '{{ aws_ec2_instance_name }}', SSM document
+          '{{ aws_ssm_document_name }}', and maintenance window(s) named
+          '{{ demo_aws_maintenance_window_name }}' removal requested (404 means already absent).
+          {% if aws_create_network_resources | default(false) | bool %}
+          {% if teardown_vpc_id | default('') | length > 0 %}
+          VPC '{{ aws_vpc_name }}', subnet, security group, internet gateway, route tables,
+          EC2 IAM role/profile '{{ aws_iam_role_name }}', and SSM service role
+          '{{ aws_ssm_service_role_name }}' also removed.
+          {% else %}
+          VPC '{{ aws_vpc_name }}' was not found (already removed or never created);
+          EC2 IAM role/profile and SSM service role deletion was attempted.
+          {% endif %}
+          {% else %}
+          Pre-existing network and IAM resources were not modified (bring-your-own mode).
+          {% endif %}
       tags:
         - aws
         - teardown

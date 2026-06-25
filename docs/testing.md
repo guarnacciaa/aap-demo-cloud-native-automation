@@ -32,9 +32,9 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
-| `01_azure_setup.yml` (create-from-scratch) | Partial | 2026-06-20 | 9/9 tasks pass locally; not yet run as AAP job template |
+| `01_azure_setup.yml` (create-from-scratch) | Pass | 2026-06-25 | Tested as AAP job template via WF - Demo setup |
 | `01_azure_setup.yml` (bring-your-own) | Not tested | — | |
-| `02_aws_setup.yml` (create-from-scratch) | Partial | 2026-06-22 | Passes locally; fixes applied: key_name CHANGE_ME omit, IAM propagation pause, assign_public_ip, user_data S3 RPM for RHEL AMIs. Bring-your-own mode and AAP job template not yet tested. |
+| `02_aws_setup.yml` (create-from-scratch) | Pass | 2026-06-25 | Tested as AAP job template via WF - Demo setup |
 | `02_aws_setup.yml` (bring-your-own) | Not tested | — | |
 | `01_azure_teardown.yml` | Pass | 2026-06-25 | `failed=0 ok=10`; job schedule link, schedule, runbook, account, and resource group all removed end-to-end (create-from-scratch mode) |
 | `02_aws_teardown.yml` | Pass | 2026-06-25 | `failed=0 ok=16 changed=10`; maintenance window, EC2, SSM doc, IAM roles, SG, subnet, route table, IGW, VPC all removed (create-from-scratch mode) |
@@ -43,8 +43,8 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
-| Setup - Azure runbook | Not tested | — | |
-| Setup - AWS SSM resources | Not tested | — | |
+| Setup - Azure runbook | Pass | 2026-06-25 | Tested via WF - Demo setup |
+| Setup - AWS SSM resources | Pass | 2026-06-25 | Tested via WF - Demo setup |
 | Teardown - Azure runbook | Pass | 2026-06-25 | `failed=0 ok=10`; end-to-end pass as AAP job template |
 | Teardown - AWS SSM resources | Pass | 2026-06-25 | `failed=0 ok=16 changed=10`; end-to-end pass as AAP job template |
 | Azure - Run Runbook and collect output | Pass | 2026-06-22 | `failed=0`; runbook output confirmed end-to-end |
@@ -57,7 +57,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
-| WF - Demo setup | Not tested | — | |
+| WF - Demo setup | Pass | 2026-06-25 | `failed=0`; Azure runbook → AWS SSM resources sequenced correctly |
 | WF - Demo teardown | Not tested | — | |
 | WF - Azure Runbook execute and collect | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
 | WF - Azure Runbook schedule | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
@@ -66,7 +66,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 ## Open issues
 
-- **Fixed 2026-06-25**: `02_aws_setup.yml` and `02_aws_teardown.yml` — replaced deprecated `create_instance_profile`/`delete_instance_profile` options on `amazon.aws.iam_role` with explicit `amazon.aws.iam_instance_profile` tasks. Teardown now deletes the instance profile before the role (required ordering). The `assume_role_policy_document_raw` return value deprecation is upstream-only and requires no code change.
+- **Fixed 2026-06-25**: `02_aws_setup.yml` and `02_aws_teardown.yml` — replaced deprecated `create_instance_profile`/`delete_instance_profile` options on `amazon.aws.iam_role` with explicit `amazon.aws.iam_instance_profile` tasks. Teardown now deletes the instance profile before the role (required ordering). The `assume_role_policy_document_raw` return value deprecation and residual `delete_instance_profile` warning on `state: absent` are upstream collection behavior, not suppressible at playbook level without disabling all warnings.
 
 
 - **Fixed 2026-06-23**: `01_azure_teardown.yml` and `01_azure_setup.yml` lacked the Azure credential resolution pre_task present in the demo playbooks. When run as AAP job templates, the controller injects Azure credentials as environment variables (`AZURE_TENANT`, `AZURE_CLIENT_ID`, `AZURE_SECRET`, `AZURE_SUBSCRIPTION_ID`) rather than Ansible variables; without the fallback the token request failed with a censored fatal error. Added the same `set_fact` resolution pre_task to both setup playbooks.
