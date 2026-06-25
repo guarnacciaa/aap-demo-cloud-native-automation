@@ -11,7 +11,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
 | CasC apply (`aap_config.yml`) | Pass | 2026-06-25 | `failed=0 changed=9`; job templates updated with full extra_vars for setup/teardown templates |
-| CasC cleanup (`aap_cleanup.yml`) | Not tested | — | |
+| CasC cleanup (`aap_cleanup.yml`) | Pass | 2026-06-25 | `failed=0 changed=7`; all AAP objects removed cleanly |
 | Smoke test (`verify.yml`) | Pass | 2026-06-22 | `failed=0`; confirms awscli, boto3, and required variables present |
 
 ### Execution environments
@@ -58,7 +58,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
 | WF - Demo setup | Pass | 2026-06-25 | `failed=0`; Azure runbook → AWS SSM resources sequenced correctly |
-| WF - Demo teardown | Not tested | — | |
+| WF - Demo teardown | Pass | 2026-06-25 | `failed=0`; Azure runbook → AWS SSM resources removed in sequence |
 | WF - Azure Runbook execute and collect | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
 | WF - Azure Runbook schedule | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
 | WF - AWS SSM document execute and collect | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
