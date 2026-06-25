@@ -37,7 +37,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | `02_aws_setup.yml` (create-from-scratch) | Partial | 2026-06-22 | Passes locally; fixes applied: key_name CHANGE_ME omit, IAM propagation pause, assign_public_ip, user_data S3 RPM for RHEL AMIs. Bring-your-own mode and AAP job template not yet tested. |
 | `02_aws_setup.yml` (bring-your-own) | Not tested | — | |
 | `01_azure_teardown.yml` | Pass | 2026-06-25 | `failed=0 ok=10`; job schedule link, schedule, runbook, account, and resource group all removed end-to-end (create-from-scratch mode) |
-| `02_aws_teardown.yml` | Not tested | — | |
+| `02_aws_teardown.yml` | Pass | 2026-06-25 | `failed=0 ok=16 changed=10`; maintenance window, EC2, SSM doc, IAM roles, SG, subnet, route table, IGW, VPC all removed (create-from-scratch mode) |
 
 ### Job templates
 
@@ -46,7 +46,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | Setup - Azure runbook | Not tested | — | |
 | Setup - AWS SSM resources | Not tested | — | |
 | Teardown - Azure runbook | Pass | 2026-06-25 | `failed=0 ok=10`; end-to-end pass as AAP job template |
-| Teardown - AWS SSM resources | Not tested | — | |
+| Teardown - AWS SSM resources | Pass | 2026-06-25 | `failed=0 ok=16 changed=10`; end-to-end pass as AAP job template |
 | Azure - Run Runbook and collect output | Pass | 2026-06-22 | `failed=0`; runbook output confirmed end-to-end |
 | Azure - Schedule Runbook | Pass | 2026-06-22 | `failed=0`; fixes applied: task order (schedule before jobSchedule), UUID as jobScheduleId, dynamic start time (+10 min) |
 | AWS - Run SSM document and collect output | Pass | 2026-06-22 | `failed=0`; SSM Automation executed on EC2 target and collected outputs |
@@ -65,6 +65,9 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | WF - AWS SSM schedule via maintenance window | Pass | 2026-06-22 | `failed=0 changed=1`; workflow completed end-to-end |
 
 ## Open issues
+
+- **Fixed 2026-06-25**: `02_aws_setup.yml` and `02_aws_teardown.yml` — replaced deprecated `create_instance_profile`/`delete_instance_profile` options on `amazon.aws.iam_role` with explicit `amazon.aws.iam_instance_profile` tasks. Teardown now deletes the instance profile before the role (required ordering). The `assume_role_policy_document_raw` return value deprecation is upstream-only and requires no code change.
+
 
 - **Fixed 2026-06-23**: `01_azure_teardown.yml` and `01_azure_setup.yml` lacked the Azure credential resolution pre_task present in the demo playbooks. When run as AAP job templates, the controller injects Azure credentials as environment variables (`AZURE_TENANT`, `AZURE_CLIENT_ID`, `AZURE_SECRET`, `AZURE_SUBSCRIPTION_ID`) rather than Ansible variables; without the fallback the token request failed with a censored fatal error. Added the same `set_fact` resolution pre_task to both setup playbooks.
 - **Fixed 2026-06-23**: `01_azure_teardown.yml` did not clean up the Azure Automation schedule and job schedule link created by `azure_runbook_schedule.yml` in bring-your-own mode. Added explicit DELETE tasks for the job schedule link and schedule (with 404 handling) before the runbook deletion. In create-from-scratch mode the Automation Account deletion cascades these objects anyway.

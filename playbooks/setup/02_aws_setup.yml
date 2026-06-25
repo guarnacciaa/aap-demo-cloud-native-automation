@@ -201,9 +201,11 @@
         - network
 
     - name: Create IAM role with AmazonSSMManagedInstanceCore for EC2 SSM access
-      # create_instance_profile: true creates an instance profile with the same
-      # name as the role; the EC2 instance references this profile to register
-      # with SSM. The role trusts ec2.amazonaws.com for AssumeRole.
+      # The role trusts ec2.amazonaws.com for AssumeRole so the EC2 instance can
+      # obtain temporary credentials for the AmazonSSMManagedInstanceCore policy.
+      # The instance profile (same name as the role) is created in the next task
+      # using amazon.aws.iam_instance_profile, which replaced the deprecated
+      # create_instance_profile option on this module (removed after 2026-05-01).
       amazon.aws.iam_role:
         name: "{{ aws_iam_role_name }}"
         assume_role_policy_document:
@@ -215,9 +217,23 @@
               Action: sts:AssumeRole
         managed_policies:
           - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
-        create_instance_profile: true
         state: present
       register: aws_iam_role_result
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - iam
+
+    - name: Create IAM instance profile for the EC2 SSM role
+      # Instance profile is the container that EC2 uses to attach an IAM role
+      # to an instance. The profile name matches the role name so existing
+      # references (ec2_instance iam_instance_profile field) remain unchanged.
+      # Uses amazon.aws.iam_instance_profile, which supersedes the deprecated
+      # create_instance_profile option on amazon.aws.iam_role.
+      amazon.aws.iam_instance_profile:
+        name: "{{ aws_iam_role_name }}"
+        role: "{{ aws_iam_role_name }}"
+        state: present
       when: aws_create_network_resources | default(false) | bool
       tags:
         - aws

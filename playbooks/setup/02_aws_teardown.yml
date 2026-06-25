@@ -102,14 +102,23 @@
     #    Skipped entirely when aws_create_network_resources is false.
     # =========================================================================
 
-    - name: Delete IAM role and instance profile created by 02_aws_setup.yml
-      # delete_instance_profile: true removes the instance profile that was
-      # automatically created alongside the role (create_instance_profile: true
-      # in the setup playbook). The role cannot be deleted while a profile
-      # still references it, so this order is correct.
+    - name: Delete IAM instance profile created by 02_aws_setup.yml
+      # The instance profile must be removed before the role can be deleted;
+      # IAM rejects role deletion while a profile still references it.
+      # Uses amazon.aws.iam_instance_profile, which supersedes the deprecated
+      # delete_instance_profile option on amazon.aws.iam_role.
+      amazon.aws.iam_instance_profile:
+        name: "{{ aws_iam_role_name }}"
+        state: absent
+      when: aws_create_network_resources | default(false) | bool
+      tags:
+        - aws
+        - iam
+
+    - name: Delete IAM EC2 role created by 02_aws_setup.yml
+      # Instance profile removed in the previous task; role deletion is now safe.
       amazon.aws.iam_role:
         name: "{{ aws_iam_role_name }}"
-        delete_instance_profile: true
         state: absent
       when: aws_create_network_resources | default(false) | bool
       tags:
@@ -118,7 +127,7 @@
 
     - name: Delete IAM service role for SSM maintenance window task execution
       # This is the ssm.amazonaws.com trust role created alongside the EC2 instance
-      # profile. It has no instance profile, so delete_instance_profile is not needed.
+      # profile. It has no instance profile attached, so no profile deletion is needed.
       amazon.aws.iam_role:
         name: "{{ aws_ssm_service_role_name }}"
         state: absent
