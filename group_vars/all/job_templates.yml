@@ -111,6 +111,7 @@ controller_templates:
       aws_create_network_resources: "{{ aws_create_network_resources }}"
       # Resource identities for the three always-deleted objects.
       aws_ssm_maintenance_window_id: "{{ aws_ssm_maintenance_window_id }}"
+      demo_aws_maintenance_window_name: "{{ demo_aws_maintenance_window_name }}"
       aws_ec2_instance_name: "{{ aws_ec2_instance_name }}"
       aws_ssm_document_name: "{{ aws_ssm_document_name }}"
       # IAM and network names (used when aws_create_network_resources: true).
