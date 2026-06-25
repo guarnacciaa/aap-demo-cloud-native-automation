@@ -42,7 +42,7 @@ controller_workflows:
     description: >-
       Remove demo resources in sequence:
       Azure runbook → AWS SSM resources.
-      Requires demo_cleanup_confirm=true passed as extra variable.
+      demo_cleanup_confirm defaults to true in both job templates.
     labels:
       - "{{ demo_label_name }}"
     state: present

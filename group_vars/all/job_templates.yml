@@ -81,8 +81,9 @@ controller_templates:
       - "{{ azure_credential_name }}"
     ask_variables_on_launch: true
     extra_vars:
-      # Safety guard — operator must override to true at launch time.
-      demo_cleanup_confirm: false
+      # Confirm is true by default so the workflow teardown works without extra prompts.
+      # When launching standalone, override with false if you want the safety guard.
+      demo_cleanup_confirm: true
       # Azure resource identity — required for ARM API DELETE calls.
       azure_automation_resource_group: "{{ azure_automation_resource_group }}"
       azure_automation_account: "{{ azure_automation_account }}"
@@ -104,8 +105,9 @@ controller_templates:
       - "{{ aws_credential_name }}"
     ask_variables_on_launch: true
     extra_vars:
-      # Safety guard — operator must override to true at launch time.
-      demo_cleanup_confirm: false
+      # Confirm is true by default so the workflow teardown works without extra prompts.
+      # When launching standalone, override with false if you want the safety guard.
+      demo_cleanup_confirm: true
       # Region and mode flag — required on every task.
       aws_region: "{{ aws_region }}"
       aws_create_network_resources: "{{ aws_create_network_resources }}"
