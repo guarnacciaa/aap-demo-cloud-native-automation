@@ -5,5 +5,7 @@ collections:
   - name: amazon.aws
   # NOTE: community.general used only for optional email notification (notify_results.yml).
   - name: community.general
+  # Used by playbooks/aap_cleanup.yml for explicit Controller object deletion.
+  - name: ansible.controller
 
 roles: []

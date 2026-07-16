@@ -1,0 +1,64 @@
+---
+# Infrastructure lifecycle workflows: only merged into controller_workflows
+# (see playbooks/aap_config.yml pre_tasks) when demo_manage_infrastructure is
+# true. They provision or destroy the Azure Automation Account and the AWS
+# networking/IAM/EC2 target from scratch, so they must not exist in AAP for
+# customer/PoC deployments that reuse existing infrastructure (see docs/setup.md).
+#
+# Kept under a separate var name (controller_workflows_infra) so group_vars
+# auto-loading this file does not unconditionally add these workflows to the
+# main controller_workflows list; the merge is opt-in via the flag.
+controller_workflows_infra:
+  # --------------------------------------------------------------------------
+  # Lifecycle: setup → demo → teardown
+  # --------------------------------------------------------------------------
+
+  - name: WF - Demo setup
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    description: >-
+      Provision supporting cloud resources in sequence:
+      Azure runbook → AWS SSM document, EC2 instance, maintenance window.
+      Run once before the demo scenario workflows.
+    labels:
+      - "{{ demo_label_name }}"
+    state: present
+    simplified_workflow_nodes:
+      - identifier: setup_azure
+        unified_job_template: Setup - Azure runbook
+        organization: "{{ demo_organization_name }}"
+        success_nodes:
+          - setup_aws
+        failure_nodes: []
+        always_nodes: []
+      - identifier: setup_aws
+        unified_job_template: Setup - AWS SSM resources
+        organization: "{{ demo_organization_name }}"
+        success_nodes: []
+        failure_nodes: []
+        always_nodes: []
+
+  - name: WF - Demo teardown
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    description: >-
+      Remove demo resources in sequence:
+      Azure runbook → AWS SSM resources.
+      demo_cleanup_confirm defaults to true in both job templates.
+    labels:
+      - "{{ demo_label_name }}"
+    state: present
+    simplified_workflow_nodes:
+      - identifier: teardown_azure
+        unified_job_template: Teardown - Azure runbook
+        organization: "{{ demo_organization_name }}"
+        success_nodes:
+          - teardown_aws
+        failure_nodes: []
+        always_nodes: []
+      - identifier: teardown_aws
+        unified_job_template: Teardown - AWS SSM resources
+        organization: "{{ demo_organization_name }}"
+        success_nodes: []
+        failure_nodes: []
+        always_nodes: []

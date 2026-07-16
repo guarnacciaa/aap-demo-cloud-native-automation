@@ -1,131 +1,8 @@
 ---
+# Always-deployed scenario job templates, present in every deployment mode.
+# See job_templates_infra.yml for the provisioning/teardown templates that
+# only exist when demo_manage_infrastructure is true (lab/dev mode).
 controller_templates:
-  # --------------------------------------------------------------------------
-  # Setup templates — provision supporting cloud resources before the demo
-  # --------------------------------------------------------------------------
-
-  - name: Setup - Azure runbook
-    organization: "{{ demo_organization_name }}"
-    inventory: "{{ demo_inventory_name }}"
-    project: "{{ demo_project_name }}"
-    playbook: playbooks/setup/01_azure_setup.yml
-    execution_environment: "{{ demo_execution_environment_name }}"
-    credentials:
-      - "{{ azure_credential_name }}"
-    ask_variables_on_launch: true
-    extra_vars:
-      # Azure resource identity — required for ARM API calls and validation pre_tasks.
-      azure_automation_resource_group: "{{ azure_automation_resource_group }}"
-      azure_automation_account: "{{ azure_automation_account }}"
-      azure_create_automation_account: "{{ azure_create_automation_account }}"
-      azure_resource_group_location: "{{ azure_resource_group_location }}"
-      azure_automation_account_sku: "{{ azure_automation_account_sku }}"
-      # Runbook identity — used when creating the runbook object and uploading content.
-      azure_runbook_name: "{{ azure_runbook_name }}"
-      azure_runbook_description: "{{ azure_runbook_description }}"
-      demo_no_log: "{{ demo_no_log }}"
-    labels:
-      - "{{ demo_label_name }}"
-
-  - name: Setup - AWS SSM resources
-    organization: "{{ demo_organization_name }}"
-    inventory: "{{ demo_inventory_name }}"
-    project: "{{ demo_project_name }}"
-    playbook: playbooks/setup/02_aws_setup.yml
-    execution_environment: "{{ demo_execution_environment_name }}"
-    credentials:
-      - "{{ aws_credential_name }}"
-    ask_variables_on_launch: true
-    extra_vars:
-      # Region and mode flag — required on every task.
-      aws_region: "{{ aws_region }}"
-      aws_create_network_resources: "{{ aws_create_network_resources }}"
-      # EC2 target instance identity.
-      aws_ec2_instance_name: "{{ aws_ec2_instance_name }}"
-      aws_ec2_instance_type: "{{ aws_ec2_instance_type }}"
-      aws_ec2_ami_id: "{{ aws_ec2_ami_id }}"
-      aws_ec2_key_name: "{{ aws_ec2_key_name }}"
-      # SSM document and maintenance window identity.
-      aws_ssm_document_name: "{{ aws_ssm_document_name }}"
-      demo_aws_maintenance_window_name: "{{ demo_aws_maintenance_window_name }}"
-      demo_aws_maintenance_window_schedule: "{{ demo_aws_maintenance_window_schedule }}"
-      # Bring-your-own network/IAM (used when aws_create_network_resources: false).
-      aws_ec2_vpc_subnet_id: "{{ aws_ec2_vpc_subnet_id }}"
-      aws_ec2_security_group_ids: "{{ aws_ec2_security_group_ids }}"
-      aws_ec2_iam_instance_profile: "{{ aws_ec2_iam_instance_profile }}"
-      aws_ssm_service_role_arn: "{{ aws_ssm_service_role_arn }}"
-      aws_ec2_assign_public_ip: "{{ aws_ec2_assign_public_ip }}"
-      # Create-from-scratch network/IAM names (used when aws_create_network_resources: true).
-      aws_vpc_name: "{{ aws_vpc_name }}"
-      aws_vpc_cidr: "{{ aws_vpc_cidr }}"
-      aws_subnet_name: "{{ aws_subnet_name }}"
-      aws_subnet_cidr: "{{ aws_subnet_cidr }}"
-      aws_sg_name: "{{ aws_sg_name }}"
-      aws_iam_role_name: "{{ aws_iam_role_name }}"
-      aws_ssm_service_role_name: "{{ aws_ssm_service_role_name }}"
-      demo_no_log: "{{ demo_no_log }}"
-    labels:
-      - "{{ demo_label_name }}"
-
-  # --------------------------------------------------------------------------
-  # Teardown templates — remove supporting cloud resources after the demo
-  # --------------------------------------------------------------------------
-
-  - name: Teardown - Azure runbook
-    organization: "{{ demo_organization_name }}"
-    inventory: "{{ demo_inventory_name }}"
-    project: "{{ demo_project_name }}"
-    playbook: playbooks/setup/01_azure_teardown.yml
-    execution_environment: "{{ demo_execution_environment_name }}"
-    credentials:
-      - "{{ azure_credential_name }}"
-    ask_variables_on_launch: true
-    extra_vars:
-      # Confirm is true by default so the workflow teardown works without extra prompts.
-      # When launching standalone, override with false if you want the safety guard.
-      demo_cleanup_confirm: true
-      # Azure resource identity — required for ARM API DELETE calls.
-      azure_automation_resource_group: "{{ azure_automation_resource_group }}"
-      azure_automation_account: "{{ azure_automation_account }}"
-      azure_create_automation_account: "{{ azure_create_automation_account }}"
-      azure_runbook_name: "{{ azure_runbook_name }}"
-      # Schedule identity — required to clean up objects created by azure_runbook_schedule.yml.
-      azure_job_schedule_name: "{{ azure_job_schedule_name }}"
-      demo_no_log: "{{ demo_no_log }}"
-    labels:
-      - "{{ demo_label_name }}"
-
-  - name: Teardown - AWS SSM resources
-    organization: "{{ demo_organization_name }}"
-    inventory: "{{ demo_inventory_name }}"
-    project: "{{ demo_project_name }}"
-    playbook: playbooks/setup/02_aws_teardown.yml
-    execution_environment: "{{ demo_execution_environment_name }}"
-    credentials:
-      - "{{ aws_credential_name }}"
-    ask_variables_on_launch: true
-    extra_vars:
-      # Confirm is true by default so the workflow teardown works without extra prompts.
-      # When launching standalone, override with false if you want the safety guard.
-      demo_cleanup_confirm: true
-      # Region and mode flag — required on every task.
-      aws_region: "{{ aws_region }}"
-      aws_create_network_resources: "{{ aws_create_network_resources }}"
-      # Resource identities for the three always-deleted objects.
-      aws_ssm_maintenance_window_id: "{{ aws_ssm_maintenance_window_id }}"
-      demo_aws_maintenance_window_name: "{{ demo_aws_maintenance_window_name }}"
-      aws_ec2_instance_name: "{{ aws_ec2_instance_name }}"
-      aws_ssm_document_name: "{{ aws_ssm_document_name }}"
-      # IAM and network names (used when aws_create_network_resources: true).
-      aws_iam_role_name: "{{ aws_iam_role_name }}"
-      aws_ssm_service_role_name: "{{ aws_ssm_service_role_name }}"
-      aws_vpc_name: "{{ aws_vpc_name }}"
-      aws_vpc_cidr: "{{ aws_vpc_cidr }}"
-      aws_sg_name: "{{ aws_sg_name }}"
-      demo_no_log: "{{ demo_no_log }}"
-    labels:
-      - "{{ demo_label_name }}"
-
   # --------------------------------------------------------------------------
   # Demo scenario templates
   # --------------------------------------------------------------------------
@@ -142,6 +19,12 @@ controller_templates:
       azure_runbook_name: "{{ azure_runbook_name }}"
       azure_automation_account: "{{ azure_automation_account }}"
       azure_automation_resource_group: "{{ azure_automation_resource_group }}"
+      # This playbook branches on azure_auth_mode (Service Principal vs
+      # Managed Identity token acquisition); without threading it through
+      # extra_vars it never reaches the playbook, since group_vars/all/ is not
+      # reliably auto-loaded for playbooks/demo/*.yml under AAP's generated
+      # inventory.
+      azure_auth_mode: "{{ azure_auth_mode }}"
     labels:
       - "{{ demo_label_name }}"
 
@@ -162,6 +45,9 @@ controller_templates:
       azure_schedule_start_time: "{{ azure_schedule_start_time }}"
       azure_schedule_frequency: "{{ azure_schedule_frequency }}"
       azure_schedule_interval: "{{ azure_schedule_interval }}"
+      # See the comment on Azure - Run Runbook and collect output above: this
+      # playbook also branches on azure_auth_mode and must receive it via extra_vars.
+      azure_auth_mode: "{{ azure_auth_mode }}"
     labels:
       - "{{ demo_label_name }}"
 
@@ -210,5 +96,77 @@ controller_templates:
     ask_variables_on_launch: true
     extra_vars:
       enable_email_notification: "{{ enable_email_notification | default(false) }}"
+    labels:
+      - "{{ demo_label_name }}"
+
+  # --------------------------------------------------------------------------
+  # Dry-run / preview templates — read-only, never wired into any workflow.
+  # Useful in both deployment modes, so they stay in the core file rather
+  # than job_templates_infra.yml.
+  # --------------------------------------------------------------------------
+
+  - name: Azure - Connectivity check (dry run)
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    playbook: playbooks/demo/azure_precheck_connectivity.yml
+    execution_environment: "{{ demo_execution_environment_name }}"
+    credentials:
+      - "{{ azure_credential_name }}"
+    ask_variables_on_launch: true
+    extra_vars:
+      azure_automation_resource_group: "{{ azure_automation_resource_group }}"
+      azure_automation_account: "{{ azure_automation_account }}"
+      azure_auth_mode: "{{ azure_auth_mode }}"
+    labels:
+      - "{{ demo_label_name }}"
+
+  - name: Azure - Runbook preview (dry run)
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    playbook: playbooks/demo/azure_runbook_preview.yml
+    execution_environment: "{{ demo_execution_environment_name }}"
+    credentials:
+      - "{{ azure_credential_name }}"
+    ask_variables_on_launch: true
+    extra_vars:
+      azure_automation_resource_group: "{{ azure_automation_resource_group }}"
+      azure_automation_account: "{{ azure_automation_account }}"
+      azure_runbook_name: "{{ azure_runbook_name }}"
+      azure_auth_mode: "{{ azure_auth_mode }}"
+    labels:
+      - "{{ demo_label_name }}"
+
+  - name: AWS - Connectivity check (dry run)
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    playbook: playbooks/demo/aws_precheck_connectivity.yml
+    execution_environment: "{{ demo_execution_environment_name }}"
+    credentials:
+      - "{{ aws_credential_name }}"
+    ask_variables_on_launch: true
+    extra_vars:
+      aws_region: "{{ aws_region }}"
+      aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id }}"
+    labels:
+      - "{{ demo_label_name }}"
+
+  - name: AWS - SSM preview (dry run)
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    playbook: playbooks/demo/aws_ssm_preview.yml
+    execution_environment: "{{ demo_execution_environment_name }}"
+    credentials:
+      - "{{ aws_credential_name }}"
+    ask_variables_on_launch: true
+    extra_vars:
+      aws_region: "{{ aws_region }}"
+      aws_ssm_document_name: "{{ aws_ssm_document_name }}"
+      aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id }}"
+      aws_ssm_maintenance_window_id: "{{ aws_ssm_maintenance_window_id }}"
+      demo_aws_maintenance_window_name: "{{ demo_aws_maintenance_window_name }}"
     labels:
       - "{{ demo_label_name }}"

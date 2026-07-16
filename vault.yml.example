@@ -8,22 +8,40 @@
 #
 # vault.yml is gitignored and must never be committed to the repository.
 # All vault_ variables are mapped to plain names in demo_variables.yml.
+#
+# This file is organized into two scopes, marked by the banners below:
+#   [ALWAYS REQUIRED]  needed in every deployment, regardless of mode.
+#   [LAB/DEV ONLY]      consumed exclusively by the Setup - */Teardown - *
+#                       job templates and workflows. SKIP this section when
+#                       demo_manage_infrastructure is false (customer/PoC
+#                       deployment against pre-existing infrastructure) —
+#                       leaving it at CHANGE_ME is fine, it is simply never
+#                       used.
+# playbooks/aap_config.yml and playbooks/verify.yml enforce this: no secret
+# in this demo is exclusively lab/dev-only today (the Azure and AWS
+# credentials below are attached to setup, teardown, and scenario job
+# templates alike), so every entry currently lands in [ALWAYS REQUIRED].
 # ============================================================================
 
-# --- AAP Controller credentials ---
+# --- AAP Controller credentials --- [ALWAYS REQUIRED]
 vault_controller_username: CHANGE_ME
 vault_controller_password: CHANGE_ME
 
-# --- AWS IAM credentials ---
-# Required by 02_aws_setup.yml and the AWS credential in AAP.
+# --- AWS IAM credentials --- [ALWAYS REQUIRED]
+# Required by 02_aws_setup.yml, 02_aws_teardown.yml, and every AWS-facing
+# job template in every deployment mode.
 vault_aws_access_key: CHANGE_ME
 vault_aws_secret_key: CHANGE_ME
 
-# --- Azure Service Principal credentials ---
-# Required by 01_azure_setup.yml and the Azure credential in AAP.
+# --- Azure Service Principal credentials --- [ALWAYS REQUIRED when azure_auth_mode: service_principal]
+# Required by 01_azure_setup.yml, 01_azure_teardown.yml, and every
+# Azure-facing job template in every deployment mode — but only when
+# azure_auth_mode in demo_variables.yml is "service_principal" (the
+# default). Not read at all when azure_auth_mode: msi (Managed Identity);
+# leave both at CHANGE_ME in that case, see demo_variables.yml.example.
 vault_azure_client_id: CHANGE_ME
 vault_azure_client_secret: CHANGE_ME
 
-# --- Optional email notification ---
+# --- Optional email notification --- [ALWAYS REQUIRED if enable_email_notification: true]
 # Only required when enable_email_notification: true in demo_variables.yml.
 vault_smtp_password: CHANGE_ME

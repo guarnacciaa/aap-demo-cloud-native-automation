@@ -3,6 +3,18 @@
 # ============================================================================
 # Copy to demo_variables.yml and edit for your environment.
 # demo_variables.yml is gitignored so it is not overwritten on git pull.
+#
+# This file is organized into two scopes, marked by the banners below:
+#   [ALWAYS REQUIRED]  needed in every deployment, regardless of mode.
+#   [LAB/DEV ONLY]      consumed exclusively by the Setup - */Teardown - *
+#                       job templates and workflows. SKIP these entire
+#                       sections when demo_manage_infrastructure is false
+#                       (customer/PoC deployment against pre-existing
+#                       infrastructure) — leaving them at their defaults is
+#                       fine, they are simply never used.
+# playbooks/aap_config.yml and playbooks/verify.yml enforce this: the
+# [LAB/DEV ONLY] variables are only validated when demo_manage_infrastructure
+# is true, so a customer/PoC deployment is never blocked by them.
 # ============================================================================
 
 demo_no_log: false
@@ -10,8 +22,27 @@ demo_no_log: false
 # Set to true in production to hide secrets from job output.
 aap_configuration_secure_logging: false
 
+# --- Deployment mode --- [ALWAYS REQUIRED]
+# true (default): lab / dev / self-demo deployment. CasC creates the full
+#   infrastructure lifecycle: Setup - Azure runbook, Setup - AWS SSM
+#   resources, Teardown - Azure runbook, Teardown - AWS SSM resources, plus
+#   the WF - Demo setup and WF - Demo teardown workflows. Use this when
+#   there is no pre-existing Azure Automation Account or AWS SSM target and
+#   you want the demo to create and destroy everything itself. All
+#   [LAB/DEV ONLY] variables below must be set.
+# false: customer / PoC deployment against pre-existing infrastructure. CasC
+#   creates ONLY the scenario job templates (Azure - Run Runbook and collect
+#   output, Azure - Schedule Runbook, AWS - Run SSM document and collect
+#   output, AWS - Schedule SSM via maintenance window, Notify - Email
+#   automation results, plus the dry-run templates) and their workflows. No
+#   provisioning or teardown objects are created in AAP at all, which
+#   removes any risk of accidentally launching a job that creates a
+#   duplicate Automation Account or tears down the customer's existing SSM
+#   target. [LAB/DEV ONLY] variables below can be left at their defaults.
+demo_manage_infrastructure: true
+
 # ============================================================================
-# Vault variable mappings
+# Vault variable mappings [ALWAYS REQUIRED]
 # ============================================================================
 # Map vault_ prefixed secrets to the plain names used by roles and playbooks.
 # vault.yml must be copied from vault.yml.example and encrypted before use.
@@ -23,7 +54,7 @@ aws_access_key: "{{ vault_aws_access_key }}"
 aws_secret_key: "{{ vault_aws_secret_key }}"
 smtp_password: "{{ vault_smtp_password }}"
 
-# --- AAP connection ---
+# --- AAP connection --- [ALWAYS REQUIRED]
 # controller_username and controller_password are mapped from vault above.
 # The dispatch role resolves gateway auth from aap_* -> controller_* fallback.
 aap_hostname: CHANGE_ME
@@ -35,6 +66,7 @@ aap_validate_certs: false
 # Do not use legacy /api/v2/ on the gateway hostname.
 aap_controller_api_prefix: /api/controller/v2
 
+# --- AAP object names --- [ALWAYS REQUIRED]
 demo_organization_name: Multicloud Demo
 demo_organization_description: Azure Runbook and AWS SSM automation PoC
 demo_project_name: Cloud Native Automation Demo
@@ -46,13 +78,13 @@ demo_execution_environment_name: ee-cloud-native-automation
 # Replace CHANGE_ME with your PAH hostname (e.g. hub.example.com).
 demo_execution_environment_image: CHANGE_ME/ee-cloud-native-automation:latest
 
-# Private Automation Hub container registry (for Controller EE image pulls).
+# Private Automation Hub container registry (for Controller EE image pulls). [ALWAYS REQUIRED if using a custom EE]
 # Use the Gateway host or IP without a URL scheme; must match demo_execution_environment_image.
 hub_registry_credential_name: PAH Container Registry
 hub_registry_host: "{{ aap_hostname | regex_replace('^https?://', '') | regex_replace('/$', '') }}"
 
 # ============================================================================
-# Git repository configuration
+# Git repository configuration [ALWAYS REQUIRED]
 # ============================================================================
 # Choose ONE of the following options based on your Git hosting platform:
 #
@@ -70,18 +102,27 @@ demo_project_scm_url: CHANGE_ME_GIT_REPO_URL
 demo_project_scm_branch: main
 
 # ============================================================================
-# AWS SSM settings
+# AWS SSM settings [ALWAYS REQUIRED]
 # ============================================================================
+# Consumed by the scenario job templates in every deployment mode. In
+# customer/PoC mode (demo_manage_infrastructure: false), aws_ssm_target_instance_id
+# must identify the customer's EXISTING SSM-managed instance.
 
 aws_region: us-east-1
 # aws_access_key and aws_secret_key are mapped from vault above.
-# Name of the SSM Automation document created by playbooks/setup/02_aws_setup.yml.
+# Name of the SSM Automation document. Bring-your-own: must match a
+# pre-existing document. Create-from-scratch: 02_aws_setup.yml creates it
+# with this name.
 aws_ssm_document_name: aap-demo-ssm-document
-# Populated after running 02_aws_setup.yml — copy the printed EC2 instance ID here.
+# Bring-your-own: ID of the pre-existing SSM-managed instance to target.
+# Create-from-scratch: populated after running 02_aws_setup.yml — copy the
+# printed EC2 instance ID here.
 aws_ssm_target_instance_id: CHANGE_ME
 
 # --- AWS SSM maintenance window ---
-# Populated after running 02_aws_setup.yml — copy the printed window ID here.
+# Bring-your-own: ID of the pre-existing maintenance window to target.
+# Create-from-scratch: populated after running 02_aws_setup.yml — copy the
+# printed window ID here.
 aws_ssm_maintenance_window_id: CHANGE_ME
 aws_ssm_maintenance_task_name: aap-demo-ssm-task
 # IAM role ARN that SSM assumes to execute the maintenance window Automation task.
@@ -96,40 +137,48 @@ aws_ssm_service_role_arn: CHANGE_ME_ROLE_ARN
 aws_account_id: CHANGE_ME
 
 # ============================================================================
-# Azure Automation settings
+# Azure Automation settings [ALWAYS REQUIRED]
 # ============================================================================
-# Two modes controlled by azure_create_automation_account:
-#   false (default) — bring-your-own: azure_automation_resource_group and
-#                     azure_automation_account must name pre-existing resources.
-#                     Replace the CHANGE_ME placeholders below.
-#   true            — create-from-scratch: 01_azure_setup.yml creates the
-#                     resource group and Automation Account from scratch.
-#                     Provide desired resource names (not CHANGE_ME) below.
-#                     Teardown counterpart (01_azure_teardown.yml) removes
-#                     all resources created in this mode.
-azure_create_automation_account: false
+# Consumed by the scenario job templates in every deployment mode. In
+# customer/PoC mode (demo_manage_infrastructure: false), azure_automation_resource_group
+# and azure_automation_account must name the customer's EXISTING Automation Account.
+
+# Authentication mode for every Azure Automation REST API call (token
+# acquisition in azure_runbook_run.yml, azure_runbook_schedule.yml,
+# 01_azure_setup.yml, 01_azure_teardown.yml, and the dry-run playbooks). Two
+# values:
+#   service_principal (default): azure_client_id + azure_client_secret +
+#     azure_tenant_id (mapped from vault above) are exchanged for a Resource
+#     Manager access token via an OAuth2 client-credentials POST. Works
+#     regardless of where AAP itself is hosted — the correct choice for
+#     customer/PoC deployments and the only choice if AAP does not run on Azure.
+#   msi: Managed Identity. No client secret stored anywhere; the token is
+#     instead requested from the Azure Instance Metadata Service (IMDS)
+#     endpoint (http://169.254.169.254/metadata/identity/oauth2/token).
+#     Requires the AAP execution node/EE container that runs the job to
+#     itself be an Azure resource (VM, VMSS, AKS node, etc.) with a system-
+#     or user-assigned identity enabled and the same RBAC role granted (see
+#     docs/setup.md). azure_client_id/azure_client_secret are then unused
+#     (leave the vault entries at CHANGE_ME).
+azure_auth_mode: service_principal
 
 azure_subscription_id: CHANGE_ME
 azure_tenant_id: CHANGE_ME
 # azure_client_id and azure_client_secret are mapped from vault above.
+# Only used when azure_auth_mode: service_principal (see above).
 
 # Resource group and account names used in both modes.
 # Bring-your-own: must match names of pre-existing Azure resources.
-# Create-from-scratch: 01_azure_setup.yml creates resources with these names;
-#   replace CHANGE_ME with desired names (e.g. aap-demo-cna-rg, aap-demo-automation).
+# Create-from-scratch (azure_create_automation_account: true, see the
+#   [LAB/DEV ONLY] section below): 01_azure_setup.yml creates resources with
+#   these names; replace CHANGE_ME with desired names (e.g. aap-demo-cna-rg,
+#   aap-demo-automation).
 azure_automation_resource_group: CHANGE_ME
 azure_automation_account: CHANGE_ME
 
-# --- Create-from-scratch settings (azure_create_automation_account: true) ---
-# Location and SKU for resources provisioned by 01_azure_setup.yml.
-# Safe to leave as-is; customize only if defaults conflict with your environment.
-# Teardown counterpart (01_azure_teardown.yml) removes all resources created here.
-azure_resource_group_location: eastus
-azure_automation_account_sku: Basic
-
-# Name of the runbook created by playbooks/setup/01_azure_setup.yml.
+# Name of the runbook. Bring-your-own: must match a pre-existing runbook.
+# Create-from-scratch: created by playbooks/setup/01_azure_setup.yml.
 azure_runbook_name: aap-demo-runbook
-azure_runbook_description: AAP cloud-native automation demo runbook
 
 # --- Azure runbook schedule ---
 azure_job_schedule_name: poc-runbook-schedule
@@ -139,7 +188,7 @@ azure_schedule_frequency: Hour
 azure_schedule_interval: 24
 
 # ============================================================================
-# Optional email notification
+# Optional email notification [ALWAYS REQUIRED if enable_email_notification: true]
 # ============================================================================
 # Requires community.general collection (no certified SMTP module available).
 # Set enable_email_notification: true and configure SMTP details below.
@@ -152,14 +201,40 @@ smtp_username: notifier@example.com
 notification_to: ops@example.com
 
 # ============================================================================
-# Credential names (must match credentials.yml)
+# Credential names (must match credentials.yml) [ALWAYS REQUIRED]
 # ============================================================================
 
 azure_credential_name: Azure Service Principal
 aws_credential_name: AWS IAM User
 
 # ============================================================================
-# Setup variables (used by playbooks/setup/*)
+# Azure — Automation Account provisioning [LAB/DEV ONLY]
+# Consumed exclusively by Setup - Azure runbook / Teardown - Azure runbook.
+# Leave at defaults when demo_manage_infrastructure: false; they are unused.
+# ============================================================================
+# Two modes controlled by azure_create_automation_account:
+#   false (default) — bring-your-own: azure_automation_resource_group and
+#                     azure_automation_account (above) must name pre-existing
+#                     resources.
+#   true            — create-from-scratch: 01_azure_setup.yml creates the
+#                     resource group and Automation Account from scratch
+#                     using the location/SKU below.
+#                     Teardown counterpart (01_azure_teardown.yml) removes
+#                     all resources created in this mode.
+azure_create_automation_account: false
+
+# Location and SKU for resources provisioned by 01_azure_setup.yml.
+# Safe to leave as-is; customize only if defaults conflict with your environment.
+azure_resource_group_location: eastus
+azure_automation_account_sku: Basic
+
+# Description used only when 01_azure_setup.yml creates the runbook object.
+azure_runbook_description: AAP cloud-native automation demo runbook
+
+# ============================================================================
+# AWS — networking, IAM, and EC2 provisioning [LAB/DEV ONLY]
+# Consumed exclusively by Setup - AWS SSM resources / Teardown - AWS SSM resources.
+# Leave at defaults when demo_manage_infrastructure: false; they are unused.
 # ============================================================================
 # These variables are consumed by the setup playbooks that provision supporting
 # infrastructure before the demo scenario can run. Run setup playbooks in order:

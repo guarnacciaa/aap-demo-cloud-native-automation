@@ -10,9 +10,9 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
-| CasC apply (`aap_config.yml`) | Pass | 2026-06-25 | `failed=0 changed=9`; job templates updated with full extra_vars for setup/teardown templates |
+| CasC apply (`aap_config.yml`) | Not tested | — | Logic changed for azure_auth_mode/demo_manage_infrastructure (new mode-aware asserts, `_infra` template merge); default service_principal path not yet re-verified |
 | CasC cleanup (`aap_cleanup.yml`) | Pass | 2026-06-25 | `failed=0 changed=7`; all AAP objects removed cleanly |
-| Smoke test (`verify.yml`) | Pass | 2026-06-22 | `failed=0`; confirms awscli, boto3, and required variables present |
+| Smoke test (`verify.yml`) | Not tested | — | Logic changed for azure_auth_mode/demo_manage_infrastructure (new mode-aware asserts); default service_principal path not yet re-verified |
 
 ### Execution environments
 
@@ -32,40 +32,45 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
-| `01_azure_setup.yml` (create-from-scratch) | Pass | 2026-06-25 | Tested as AAP job template via WF - Demo setup |
+| `01_azure_setup.yml` (create-from-scratch) | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified |
 | `01_azure_setup.yml` (bring-your-own) | Not tested | — | |
 | `02_aws_setup.yml` (create-from-scratch) | Pass | 2026-06-25 | Tested as AAP job template via WF - Demo setup |
 | `02_aws_setup.yml` (bring-your-own) | Not tested | — | |
-| `01_azure_teardown.yml` | Pass | 2026-06-25 | `failed=0 ok=10`; job schedule link, schedule, runbook, account, and resource group all removed end-to-end (create-from-scratch mode) |
+| `01_azure_teardown.yml` | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-25, `failed=0 ok=10` |
 | `02_aws_teardown.yml` | Pass | 2026-06-25 | `failed=0 ok=16 changed=10`; maintenance window, EC2, SSM doc, IAM roles, SG, subnet, route table, IGW, VPC all removed (create-from-scratch mode) |
 
 ### Job templates
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
-| Setup - Azure runbook | Pass | 2026-06-25 | Tested via WF - Demo setup |
+| Setup - Azure runbook | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified |
 | Setup - AWS SSM resources | Pass | 2026-06-25 | Tested via WF - Demo setup |
-| Teardown - Azure runbook | Pass | 2026-06-25 | `failed=0 ok=10`; end-to-end pass as AAP job template |
+| Teardown - Azure runbook | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-25, `failed=0 ok=10` |
 | Teardown - AWS SSM resources | Pass | 2026-06-25 | `failed=0 ok=16 changed=10`; end-to-end pass as AAP job template |
-| Azure - Run Runbook and collect output | Pass | 2026-06-22 | `failed=0`; runbook output confirmed end-to-end |
-| Azure - Schedule Runbook | Pass | 2026-06-22 | `failed=0`; fixes applied: task order (schedule before jobSchedule), UUID as jobScheduleId, dynamic start time (+10 min) |
+| Azure - Run Runbook and collect output | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0` |
+| Azure - Schedule Runbook | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0` |
 | AWS - Run SSM document and collect output | Pass | 2026-06-22 | `failed=0`; SSM Automation executed on EC2 target and collected outputs |
 | AWS - Schedule SSM via maintenance window | Pass | 2026-06-22 | `failed=0 changed=1`; task registered in maintenance window |
 | Notify - Email automation results | Not tested | — | |
+| Azure - Connectivity check (dry run) | Not tested | — | New job template |
+| Azure - Runbook preview (dry run) | Not tested | — | New job template |
+| AWS - Connectivity check (dry run) | Not tested | — | New job template |
+| AWS - SSM preview (dry run) | Not tested | — | New job template |
 
 ### Workflows
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
-| WF - Demo setup | Pass | 2026-06-25 | `failed=0`; Azure runbook → AWS SSM resources sequenced correctly |
-| WF - Demo teardown | Pass | 2026-06-25 | `failed=0`; Azure runbook → AWS SSM resources removed in sequence |
-| WF - Azure Runbook execute and collect | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
-| WF - Azure Runbook schedule | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
+| WF - Demo setup | Not tested | — | Depends on Setup - Azure runbook, whose logic changed for azure_auth_mode; not yet re-verified. Last known-good run (pre-change): 2026-06-25, `failed=0` |
+| WF - Demo teardown | Not tested | — | Depends on Teardown - Azure runbook, whose logic changed for azure_auth_mode; not yet re-verified. Last known-good run (pre-change): 2026-06-25, `failed=0` |
+| WF - Azure Runbook execute and collect | Not tested | — | Depends on Azure - Run Runbook and collect output, whose logic changed for azure_auth_mode; not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0` |
+| WF - Azure Runbook schedule | Not tested | — | Depends on Azure - Schedule Runbook, whose logic changed for azure_auth_mode; not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0` |
 | WF - AWS SSM document execute and collect | Pass | 2026-06-22 | `failed=0`; workflow completed end-to-end |
 | WF - AWS SSM schedule via maintenance window | Pass | 2026-06-22 | `failed=0 changed=1`; workflow completed end-to-end |
 
 ## Open issues
 
+- **2026-07-16**: Added `azure_auth_mode` (Service Principal / Managed Identity) and `demo_manage_infrastructure` (deployment modes) support, plus four new dry-run job templates. This reset several previously-`Pass` rows to `Not tested` (see Status summary above) because the underlying playbooks changed; re-verify the default `service_principal` / `demo_manage_infrastructure: true` path end-to-end before considering this a regression risk. `msi` mode and `demo_manage_infrastructure: false` have not been tested at all yet.
 - **Fixed 2026-06-25**: `02_aws_setup.yml` and `02_aws_teardown.yml` — replaced deprecated `create_instance_profile`/`delete_instance_profile` options on `amazon.aws.iam_role` with explicit `amazon.aws.iam_instance_profile` tasks. Teardown now deletes the instance profile before the role (required ordering). The `assume_role_policy_document_raw` return value deprecation and residual `delete_instance_profile` warning on `state: absent` are upstream collection behavior, not suppressible at playbook level without disabling all warnings.
 
 

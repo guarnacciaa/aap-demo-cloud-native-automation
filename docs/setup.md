@@ -1,5 +1,58 @@
 # Environment setup
 
+## Deployment mode: lab/dev vs customer/PoC
+
+Set `demo_manage_infrastructure` in `group_vars/all/demo_variables.yml` **before** running `aap_config.yml`:
+
+| `demo_manage_infrastructure` | Scenario | What CasC creates |
+|---|---|---|
+| `true` (default) | Lab, dev, or self-running the full demo; no pre-existing Azure Automation Account or AWS SSM target | `Setup - Azure runbook`, `Setup - AWS SSM resources`, `Teardown - Azure runbook`, `Teardown - AWS SSM resources` job templates, `WF - Demo setup`, `WF - Demo teardown`, plus all scenario and dry-run objects |
+| `false` | Deploying at a customer site where the Automation Account and SSM target already exist | Only the scenario job templates (`Azure - Run Runbook and collect output`, `Azure - Schedule Runbook`, `AWS - Run SSM document and collect output`, `AWS - Schedule SSM via maintenance window`, `Notify - Email automation results`), the four dry-run templates, and their workflows |
+
+The flag is read in `playbooks/aap_config.yml`: when `true`, the objects defined in `group_vars/all/job_templates_infra.yml` and `group_vars/all/workflow_templates_infra.yml` are merged into the lists the `infra.aap_configuration` dispatch role applies; when `false`, those two files are still loaded (Ansible auto-loads every file under `group_vars/all/`) but never merged in, so their objects are never created in AAP.
+
+### Which variables to set in each mode
+
+`group_vars/all/demo_variables.yml.example` **and** `vault.yml.example` group every variable/secret under the same banner:
+
+- `[ALWAYS REQUIRED]` — needed regardless of mode: AAP connection, object names, Git repo, credential names, the AWS SSM identity variables (`aws_region`, `aws_ssm_document_name`, `aws_ssm_target_instance_id`, `aws_ssm_maintenance_window_id`, `aws_ssm_maintenance_task_name`, `aws_ssm_service_role_arn`, `aws_account_id`), the Azure Automation identity variables (`azure_subscription_id`, `azure_tenant_id`, `azure_automation_resource_group`, `azure_automation_account`, `azure_runbook_name`, `azure_job_schedule_name` and the schedule timing variables) — the scenario job templates authenticate against and target these objects in both modes. `vault_azure_client_id`/`vault_azure_client_secret` are further conditional on a second, independent axis: `azure_auth_mode` (see [Azure authentication mode](#azure-authentication-mode-service-principal-vs-managed-identity)) — only required when it is `service_principal` (the default), unused when it is `msi`.
+- `[LAB/DEV ONLY]` — consumed exclusively by `Setup - *` / `Teardown - *`: `azure_create_automation_account`, `azure_resource_group_location`, `azure_automation_account_sku`, `azure_runbook_description`, and the whole AWS networking/IAM/EC2 provisioning block (`aws_create_network_resources`, EC2 instance settings, bring-your-own and create-from-scratch network/IAM variables, maintenance window creation settings) in `demo_variables.yml.example`. No secret in this demo is exclusively lab/dev-only today — see `vault.yml.example`.
+
+Both `playbooks/aap_config.yml` (pre-task assertions) and `playbooks/verify.yml` enforce this split: the `[LAB/DEV ONLY]` checks only run `when: demo_manage_infrastructure | bool`, so a customer/PoC deployment fails fast only on the variables it actually needs, never on unrelated provisioning variables.
+
+When `demo_manage_infrastructure: false`:
+
+- Set `azure_automation_resource_group` / `azure_automation_account` / `azure_runbook_name` to the customer's existing Automation Account and runbook.
+- Set `aws_ssm_document_name` / `aws_ssm_target_instance_id` / `aws_ssm_maintenance_window_id` / `aws_ssm_service_role_arn` / `aws_account_id` to the customer's existing SSM Automation document, target instance, and maintenance window.
+- Request Azure/AWS credentials scoped to **run + read only** (see [Reduced credential scope for customer/PoC mode](#reduced-credential-scope-for-customer-poc-mode) below) — the full provisioning permissions in [Azure Automation Account mode](#azure-automation-account-mode) and [AWS networking and IAM mode](#aws-networking-and-iam-mode) are not needed since no provisioning/teardown job template exists to use them.
+- Switching modes later: change the flag and re-run `ansible-playbook playbooks/aap_config.yml --vault-id @prompt`. Going from `true` to `false` does **not** remove the infra job/workflow templates already created in AAP (dispatch only reconciles objects it is told about); delete them explicitly with `ansible-playbook playbooks/aap_cleanup.yml -e demo_cleanup_confirm=true --vault-id @prompt` and re-apply, or delete them manually from the Controller UI.
+
+### Reduced credential scope for customer/PoC mode
+
+When `demo_manage_infrastructure: false`, request credentials limited to:
+
+- **Azure Service Principal**: `Microsoft.Automation/automationAccounts/read`, `Microsoft.Automation/automationAccounts/runbooks/*`, `Microsoft.Automation/automationAccounts/jobs/*`, `Microsoft.Automation/automationAccounts/jobSchedules/*`, `Microsoft.Automation/automationAccounts/schedules/*` on the resource group containing the existing Automation Account.
+- **AWS IAM user or role**: `ssm:StartAutomationExecution`, `ssm:GetAutomationExecution`, `ssm:DescribeInstanceInformation`, `ssm:RegisterTaskWithMaintenanceWindow`, `ssm:DescribeDocument`, `ssm:DescribeMaintenanceWindows`, `sts:GetCallerIdentity`.
+
+Do not request the `iam:CreateRole`/`iam:AttachRolePolicy`/`iam:CreateInstanceProfile`-family AWS permissions or the `Microsoft.Automation/automationAccounts/write`/resource-group-create Azure permissions listed below; they are only used by the setup and teardown playbooks, which are not deployed in this mode.
+
+## Azure authentication mode: Service Principal vs Managed Identity
+
+`azure_auth_mode` in `group_vars/all/demo_variables.yml` (default `service_principal`) controls how every Azure Automation REST API call (token acquisition in `azure_runbook_run.yml`, `azure_runbook_schedule.yml`, `01_azure_setup.yml`, `01_azure_teardown.yml`, and the dry-run playbooks) authenticates to Azure. This is independent of `demo_manage_infrastructure` above — it applies in every deployment mode.
+
+| `azure_auth_mode` | How it authenticates | Requirements |
+|---|---|---|
+| `service_principal` (default) | `azure_client_id` + `azure_client_secret` + `azure_tenant_id` are exchanged for a Resource Manager access token via an OAuth2 client-credentials POST to `login.microsoftonline.com` | `vault_azure_client_id` and `vault_azure_client_secret` in `vault.yml`. Works regardless of where AAP is hosted. |
+| `msi` | The access token is requested from the Azure Instance Metadata Service (IMDS) endpoint (`http://169.254.169.254/metadata/identity/oauth2/token`) instead; no client secret is stored in AAP at all | The AAP execution node or execution environment container that actually runs the job must itself be an Azure resource (VM, VMSS, AKS node, etc.) with a system- or user-assigned Managed Identity enabled, and that identity must hold the same RBAC role documented in [Azure Automation Account mode](#azure-automation-account-mode) / [Reduced credential scope for customer/PoC mode](#reduced-credential-scope-for-customer-poc-mode). |
+
+Notes:
+
+- AAP's built-in "Microsoft Azure Resource Manager" credential type has **no Managed Identity input field** — it only supports Service Principal or Active Directory user/password. The IMDS token request is a capability implemented directly in this demo's playbooks (`ansible.builtin.uri` against the metadata endpoint), not something the Controller credential injects. The Azure credential is still created in `msi` mode (with only `azure_subscription_id` populated) so job templates keep a stable credential association, but `client`/`secret`/`tenant` are omitted entirely — no secret is ever stored.
+- Choose `msi` only when you know AAP's execution nodes run on Azure infrastructure with an identity attached. In every other topology (on-prem, another cloud, OpenShift not on Azure), `service_principal` is the only option that works.
+- `playbooks/aap_config.yml` and `playbooks/verify.yml` validate `azure_auth_mode` and only require the Service Principal vault secrets when it is set to `service_principal` (the default).
+- Switching modes: change `azure_auth_mode` and re-run `ansible-playbook playbooks/aap_config.yml --vault-id @prompt` to update the Azure credential's stored inputs.
+- **`azure_auth_mode` must be threaded through each job template's `extra_vars`** (see `group_vars/all/job_templates.yml` / `job_templates_infra.yml`). AAP runs `playbooks/demo/*.yml` and `playbooks/setup/*.yml` against its own generated inventory, not this repository's `inventory.yml`, so `group_vars/all/demo_variables.yml` is **not** auto-loaded for those nested playbooks the way it is for `playbooks/aap_config.yml` and `playbooks/verify.yml`. If a job template is missing `azure_auth_mode` in its `extra_vars`, the token acquisition tasks silently fall back to the `service_principal` branch — even with `azure_auth_mode: msi` set correctly in `demo_variables.yml` — and the Service Principal token request then fails because `azure_client_id`/`azure_client_secret` are empty. Re-run `aap_config.yml` after editing `extra_vars` so the stored job template definitions pick up the change.
+
 ## Requirements
 
 | Component | Version / Notes |
@@ -25,6 +78,8 @@ can run. No manual cloud console steps are required.
 | AWS SSM Automation document | `playbooks/setup/02_aws_setup.yml` | `02_aws_teardown.yml` | Setup - AWS SSM resources | always |
 | AWS EC2 instance (SSM target) | `playbooks/setup/02_aws_setup.yml` | `02_aws_teardown.yml` | Setup - AWS SSM resources | always |
 | AWS maintenance window | `playbooks/setup/02_aws_setup.yml` | `02_aws_teardown.yml` | Setup - AWS SSM resources | always |
+| AWS networking (VPC, subnet, internet gateway, route table, security group) | `playbooks/setup/02_aws_setup.yml` | `02_aws_teardown.yml` | Setup - AWS SSM resources | create-from-scratch only |
+| AWS IAM (EC2 instance role/profile, SSM service role) | `playbooks/setup/02_aws_setup.yml` | `02_aws_teardown.yml` | Setup - AWS SSM resources | create-from-scratch only |
 
 The `WF - Demo setup` workflow runs the Azure and AWS setup steps in sequence
 from the Controller UI.
@@ -135,7 +190,11 @@ ansible-vault encrypt vault.yml
 
 Edit `group_vars/all/demo_variables.yml` and set at minimum:
 
+- `demo_manage_infrastructure` — `true` (default) for lab/dev, `false` for customer/PoC
+  against pre-existing infrastructure (see [Deployment mode](#deployment-mode-labdev-vs-customerpoc) above)
 - `aap_hostname` — Controller hostname or Gateway URL
+- `azure_auth_mode` — `service_principal` (default) or `msi` (see
+  [Azure authentication mode](#azure-authentication-mode-service-principal-vs-managed-identity) above)
 - `azure_subscription_id`, `azure_tenant_id`
 - `azure_create_automation_account` — `false` (default) to use a pre-existing account,
   `true` to have `01_azure_setup.yml` create the resource group and Automation Account
@@ -235,6 +294,12 @@ execution environment, job templates, and workflow templates.
 ```bash
 ansible-playbook playbooks/verify.yml --vault-id @prompt
 ```
+
+Optionally, launch the four read-only dry-run job templates from the Controller UI
+(`Azure - Connectivity check (dry run)`, `Azure - Runbook preview (dry run)`,
+`AWS - Connectivity check (dry run)`, `AWS - SSM preview (dry run)`) before the
+scenario workflows — see [docs/procedures.md](procedures.md) for the equivalent
+`ansible-playbook` invocations. They never create, modify, or delete any resource.
 
 ## Hybrid REST/CLI approach
 

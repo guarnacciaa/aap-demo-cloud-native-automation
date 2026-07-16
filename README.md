@@ -15,14 +15,41 @@ cloud console steps are needed.
 
 ## How to run the demo
 
-| Phase | Workflow / playbook | Purpose |
+| Phase | Workflow / playbook | Purpose | Mode |
+|---|---|---|---|
+| 0. Pre-flight (optional) | `Azure - Connectivity check (dry run)`, `Azure - Runbook preview (dry run)`, `AWS - Connectivity check (dry run)`, `AWS - SSM preview (dry run)` | Read-only checks before mutating anything — see [Dry-run / preview templates](#dry-run--preview-templates) | Always |
+| 1. Setup | `WF - Demo setup` | Provision Azure runbook, EC2 instance, SSM document, maintenance window | Lab/dev only |
+| 2. Azure scenario | `WF - Azure Runbook execute and collect` | Run runbook and collect output | Always |
+| 2. Azure scenario | `WF - Azure Runbook schedule` | Create recurring runbook schedule | Always |
+| 2. AWS scenario | `WF - AWS SSM document execute and collect` | Run SSM document on EC2 target | Always |
+| 2. AWS scenario | `WF - AWS SSM schedule via maintenance window` | Register scheduled SSM task | Always |
+| 3. Teardown | `WF - Demo teardown` | Remove all demo resources | Lab/dev only |
+
+Phases 1 and 3 only exist when `demo_manage_infrastructure: true` (default); see [Deployment modes](#deployment-modes) for the customer/PoC mode that runs phase 2 (and the optional phase 0 dry-run checks) only, against pre-existing infrastructure.
+
+## Azure authentication mode
+
+`azure_auth_mode` in `demo_variables.yml` (default `service_principal`) selects how every Azure ARM REST call authenticates, independent of the deployment mode below:
+
+| `azure_auth_mode` | Requires | Notes |
 |---|---|---|
-| 1. Setup | `WF - Demo setup` | Provision Azure runbook, EC2 instance, SSM document, maintenance window |
-| 2. Azure scenario | `WF - Azure Runbook execute and collect` | Run runbook and collect output |
-| 2. Azure scenario | `WF - Azure Runbook schedule` | Create recurring runbook schedule |
-| 2. AWS scenario | `WF - AWS SSM document execute and collect` | Run SSM document on EC2 target |
-| 2. AWS scenario | `WF - AWS SSM schedule via maintenance window` | Register scheduled SSM task |
-| 3. Teardown | `WF - Demo teardown` | Remove all demo resources |
+| `service_principal` (default) | `vault_azure_client_id` / `vault_azure_client_secret` | Token acquired via an OAuth2 client-credentials POST. Works on any AAP topology and is the only option if AAP does not run on Azure. |
+| `msi` | Nothing stored in AAP | Token acquired from the Azure Instance Metadata Service (IMDS) endpoint. AAP's execution node/EE container must itself be an Azure resource with a Managed Identity enabled — see [docs/setup.md](docs/setup.md#azure-authentication-mode-service-principal-vs-managed-identity) |
+
+`azure_auth_mode` must be threaded through `extra_vars` on every Azure-facing job template (already done in `group_vars/all/job_templates.yml` / `job_templates_infra.yml`): `playbooks/demo/*.yml` and `playbooks/setup/*.yml` run against AAP's generated inventory, which does not reliably auto-load `group_vars/all/demo_variables.yml`.
+
+## Deployment modes
+
+`demo_manage_infrastructure` in `demo_variables.yml` (default `true`) controls how much of the AAP catalog this CasC creates:
+
+| Mode | `demo_manage_infrastructure` | AAP objects created | Use when |
+|---|---|---|---|
+| Lab / dev | `true` (default) | Full lifecycle: `Setup - Azure runbook`, `Setup - AWS SSM resources`, `Teardown - Azure runbook`, `Teardown - AWS SSM resources`, `WF - Demo setup`, `WF - Demo teardown`, plus all scenario and dry-run objects | You are running the demo yourself and want AAP to create and destroy the Azure Automation Account and AWS networking/IAM/EC2 target |
+| Customer / PoC | `false` | Only the scenario job templates (`Azure - Run Runbook and collect output`, `Azure - Schedule Runbook`, `AWS - Run SSM document and collect output`, `AWS - Schedule SSM via maintenance window`, `Notify - Email automation results`), the four dry-run templates, and their workflows | The customer already provides the Automation Account and SSM target; no provisioning or teardown object is created in AAP, removing any risk of accidentally launching a job that creates a duplicate Automation Account or tears down the customer's existing SSM target |
+
+In customer mode, set `azure_automation_resource_group` / `azure_automation_account` / `azure_runbook_name` and `aws_ssm_document_name` / `aws_ssm_target_instance_id` to the customer's existing resources, and scope the Azure/AWS credentials down to the reduced permission set (see [docs/setup.md](docs/setup.md)).
+
+`group_vars/all/demo_variables.yml.example` **and** `vault.yml.example` mark every variable/secret with `[ALWAYS REQUIRED]` or `[LAB/DEV ONLY]` banners so you can see at a glance what customer/PoC mode needs. `playbooks/aap_config.yml` and `playbooks/verify.yml` enforce this: the `[LAB/DEV ONLY]` variables are only validated when `demo_manage_infrastructure: true`, so leaving them at their example defaults never blocks a customer/PoC deployment.
 
 ## Quick start
 
@@ -90,14 +117,19 @@ playbooks/
   demo/
     azure_runbook_run.yml
     azure_runbook_schedule.yml
+    azure_precheck_connectivity.yml   Dry-run: Azure token + Automation Account reachability
+    azure_runbook_preview.yml         Dry-run: runbook state + recent jobs, never starts a job
     aws_ssm_run_document.yml
     aws_ssm_schedule_maintenance.yml
+    aws_precheck_connectivity.yml     Dry-run: AWS auth + SSM agent online check
+    aws_ssm_preview.yml               Dry-run: document/instance/window checks, never starts an execution
     notify_results.yml
 group_vars/all/
   demo_variables.yml.example
   organizations.yml, credentials.yml, inventories.yml, projects.yml
   execution_environments.yml, labels.yml
-  job_templates.yml, workflow_templates.yml
+  job_templates.yml, workflow_templates.yml           Always-deployed objects
+  job_templates_infra.yml, workflow_templates_infra.yml   Lab/dev-only provisioning/teardown objects
 context/
   execution-environment.yml   Custom EE with awscli
 docs/
@@ -111,13 +143,15 @@ docs/
 - AWS CLI on the control node — required by setup playbooks for SSM document creation,
   maintenance window registration, and SSM agent polling. No certified Ansible module
   covers these operations (`pip3 install awscli`).
-- Azure service principal with appropriate permissions — two modes are supported:
+- Azure Service Principal (default) or Managed Identity — see
+  [Azure authentication mode](#azure-authentication-mode) — with appropriate
+  permissions. Two resource modes are supported:
   - **Bring-your-own** (default): supply names of a pre-existing resource group and
-    Automation Account; the service principal needs Automation Contributor on the
+    Automation Account; the credential needs Automation Contributor on the
     resource group.
   - **Create from scratch**: set `azure_create_automation_account: true` in
     `demo_variables.yml`; `01_azure_setup.yml` creates the resource group and
-    Automation Account. The service principal needs Contributor on the subscription
+    Automation Account. The credential needs Contributor on the subscription
     (or on the target resource group scope). The teardown playbook removes both objects.
 - AWS IAM user with `ssm:*`, `ec2:*`, `iam:*`, and maintenance window permissions.
 - AWS EC2 networking and IAM instance profile — two modes are supported:
@@ -130,23 +164,37 @@ docs/
 
 ## Job templates
 
-| Template | Playbook |
-|---|---|
-| Setup - Azure runbook | `setup/01_azure_setup.yml` |
-| Setup - AWS SSM resources | `setup/02_aws_setup.yml` |
-| Teardown - Azure runbook | `setup/01_azure_teardown.yml` |
-| Teardown - AWS SSM resources | `setup/02_aws_teardown.yml` |
-| Azure - Run Runbook and collect output | `demo/azure_runbook_run.yml` |
-| Azure - Schedule Runbook | `demo/azure_runbook_schedule.yml` |
-| AWS - Run SSM document and collect output | `demo/aws_ssm_run_document.yml` |
-| AWS - Schedule SSM via maintenance window | `demo/aws_ssm_schedule_maintenance.yml` |
-| Notify - Email automation results | `demo/notify_results.yml` (optional) |
+The **Setup** and **Teardown** templates are only created in AAP when `demo_manage_infrastructure: true` (see [Deployment modes](#deployment-modes)); the **scenario** and **dry-run** templates are always created.
+
+| Template | Playbook | Mode |
+|---|---|---|
+| Setup - Azure runbook | `setup/01_azure_setup.yml` | Lab/dev only |
+| Setup - AWS SSM resources | `setup/02_aws_setup.yml` | Lab/dev only |
+| Teardown - Azure runbook | `setup/01_azure_teardown.yml` | Lab/dev only |
+| Teardown - AWS SSM resources | `setup/02_aws_teardown.yml` | Lab/dev only |
+| Azure - Run Runbook and collect output | `demo/azure_runbook_run.yml` | Always |
+| Azure - Schedule Runbook | `demo/azure_runbook_schedule.yml` | Always |
+| AWS - Run SSM document and collect output | `demo/aws_ssm_run_document.yml` | Always |
+| AWS - Schedule SSM via maintenance window | `demo/aws_ssm_schedule_maintenance.yml` | Always |
+| Notify - Email automation results | `demo/notify_results.yml` (optional) | Always |
+
+### Dry-run / preview templates
+
+Read-only checks, useful in both deployment modes. Never wired into any workflow — launch standalone before (or instead of) the scenario workflows.
+
+| Template | Playbook | Checks |
+|---|---|---|
+| Azure - Connectivity check (dry run) | `demo/azure_precheck_connectivity.yml` | Acquires an Azure token (SP or MSI) and confirms the Automation Account is reachable |
+| Azure - Runbook preview (dry run) | `demo/azure_runbook_preview.yml` | Confirms the runbook is published, lists its recent jobs, reports the job name pattern the real run would create — never starts a job |
+| AWS - Connectivity check (dry run) | `demo/aws_precheck_connectivity.yml` | Confirms AWS auth and that the SSM target instance is registered and online |
+| AWS - SSM preview (dry run) | `demo/aws_ssm_preview.yml` | Confirms the Automation document and maintenance window exist, reports the parameters the real run would pass to `start-automation-execution` — never starts an execution |
 
 ## Collections
 
 | Collection | Tier | Purpose |
 |---|---|---|
 | infra.aap_configuration | validated | CasC dispatch |
+| ansible.controller | certified | Explicit object deletion in `aap_cleanup.yml` |
 | azure.azcollection | certified | Azure authentication context |
 | amazon.aws | certified | EC2 instance provisioning |
 | community.general | community | Optional SMTP notification (no certified module) |
@@ -183,9 +231,11 @@ Demo-Multicloud
 | `aap_config.yml` fails on assert (`azure_automation_account`) | Bring-your-own mode but account name not set | Set `azure_automation_account` in `demo_variables.yml`, or switch to `azure_create_automation_account: true` and run `01_azure_setup.yml` first |
 | Azure ARM returns 403 on resource group or account creation | SP lacks Contributor role | Assign Contributor on the subscription or resource group scope |
 | Azure ARM returns 403 on runbook operations | SP lacks Automation Contributor | Assign Automation Contributor on the resource group |
-| SSM execution times out | SSM agent not registered on EC2 | Check instance profile; `02_aws_setup.yml` waits for registration |
+| SSM execution times out | SSM agent not registered on EC2 | Check instance profile; `02_aws_setup.yml` waits for registration; run `AWS - Connectivity check (dry run)` to confirm `PingStatus: Online` before launching the scenario workflow |
 | `aws ssm create-document` fails with `DocumentAlreadyExists` | Document name already used | Delete manually (`aws ssm delete-document --name ...`) or change `aws_ssm_document_name` |
 | Email notification skipped | `enable_email_notification` is `false` (default) | Set to `true` and configure SMTP variables |
+| Azure MSI token request fails (`Managed Identity ... not found` or connection refused to `169.254.169.254`) | `azure_auth_mode: msi` set, but the AAP execution node/EE container does not run on Azure, or no Managed Identity is enabled on it | Enable a system- or user-assigned identity on the Azure resource running the execution node, or set `azure_auth_mode: service_principal` and configure `vault_azure_client_id`/`vault_azure_client_secret` instead |
+| `Azure - Runbook preview (dry run)` fails with runbook state not `Published` | Runbook created but never published, or deleted outside Ansible | Run `01_azure_setup.yml` again (idempotent) to republish it |
 
 ## Reset
 

@@ -62,7 +62,7 @@
         - always
 
   tasks:
-    - name: Obtain Azure AD access token for Resource Manager
+    - name: Obtain Azure AD access token via Service Principal (client credentials)
       ansible.builtin.uri:
         url: "https://login.microsoftonline.com/{{ azure_tenant_id }}/oauth2/v2.0/token"
         method: POST
@@ -73,7 +73,32 @@
           client_secret: "{{ azure_client_secret }}"
           scope: https://management.azure.com/.default
         status_code: 200
-      register: azure_token
+      register: azure_token_sp
+      when: azure_auth_mode | default('service_principal') == 'service_principal'
+      no_log: "{{ demo_no_log | default(false) }}"
+      tags:
+        - azure
+        - auth
+
+    - name: Obtain Azure AD access token via Managed Identity (IMDS)
+      # Only works when this task executes on an Azure resource (VM/VMSS/AKS node/
+      # AAP execution node) with a system- or user-assigned identity enabled.
+      ansible.builtin.uri:
+        url: "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/"
+        method: GET
+        headers:
+          Metadata: "true"
+        status_code: 200
+      register: azure_token_msi
+      when: azure_auth_mode | default('service_principal') == 'msi'
+      tags:
+        - azure
+        - auth
+
+    - name: Normalize Azure access token regardless of auth mode
+      ansible.builtin.set_fact:
+        azure_access_token: >-
+          {{ (azure_token_sp.json.access_token) if (azure_auth_mode | default('service_principal') == 'service_principal') else (azure_token_msi.json.access_token) }}
       no_log: "{{ demo_no_log | default(false) }}"
       tags:
         - azure
@@ -87,7 +112,7 @@
           https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/schedules/{{ azure_job_schedule_name }}-schedule?api-version={{ azure_arm_api_version }}
         method: PUT
         headers:
-          Authorization: "Bearer {{ azure_token.json.access_token }}"
+          Authorization: "Bearer {{ azure_access_token }}"
           Content-Type: application/json
         body_format: json
         body:
@@ -113,7 +138,7 @@
           https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobSchedules/{{ _azure_job_schedule_uuid }}?api-version={{ azure_arm_api_version }}
         method: PUT
         headers:
-          Authorization: "Bearer {{ azure_token.json.access_token }}"
+          Authorization: "Bearer {{ azure_access_token }}"
           Content-Type: application/json
         body_format: json
         body:

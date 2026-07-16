@@ -1,7 +1,10 @@
-# Description: Start an Azure Automation runbook job via ARM REST API and collect output.
-# azure.azcollection has no runbook execution module; uri is used intentionally.
+# Description: Read-only pre-flight check for the Azure runbook execution demo.
+# Confirms the runbook is published and reports its most recent jobs plus the
+# job name pattern that "Azure - Run Runbook and collect output" would create.
+# Never PUTs a job — safe to run repeatedly, including against a customer's
+# pre-existing Automation Account.
 ---
-- name: Execute Azure Automation runbook and collect job output
+- name: Preview the Azure Automation runbook that would be executed
   hosts: localhost
   gather_facts: true
   collections:
@@ -12,7 +15,9 @@
     azure_automation_account: "{{ azure_automation_account | mandatory }}"
     azure_runbook_name: "{{ azure_runbook_name | mandatory }}"
     azure_arm_api_version: "2024-10-23"
-    azure_job_name: "aap-{{ azure_runbook_name }}-{{ ansible_date_time.epoch }}"
+    # Same naming pattern azure_runbook_run.yml uses — shown here for preview
+    # only, never actually created.
+    azure_next_job_name: "aap-{{ azure_runbook_name }}-{{ ansible_date_time.epoch }}"
 
   pre_tasks:
     - name: Resolve Azure credentials from AAP credential injection or Ansible variables
@@ -20,8 +25,6 @@
       # AZURE_CLIENT_ID, AZURE_SECRET, and AZURE_TENANT as environment variables.
       # When running locally with demo_variables.yml those Ansible variables are
       # already defined at higher precedence and take priority over the env lookup.
-      # Self-referencing in vars: causes infinite recursion in Ansible — set_fact
-      # in pre_tasks avoids that by resolving variables at task execution time.
       ansible.builtin.set_fact:
         azure_subscription_id: >-
           {{ azure_subscription_id
@@ -60,7 +63,7 @@
       no_log: "{{ demo_no_log | default(false) }}"
       tags:
         - azure
-        - auth
+        - preview
 
     - name: Obtain Azure AD access token via Managed Identity (IMDS)
       # Only works when this task executes on an Azure resource (VM/VMSS/AKS node/
@@ -75,7 +78,7 @@
       when: azure_auth_mode | default('service_principal') == 'msi'
       tags:
         - azure
-        - auth
+        - preview
 
     - name: Normalize Azure access token regardless of auth mode
       ansible.builtin.set_fact:
@@ -84,83 +87,86 @@
       no_log: "{{ demo_no_log | default(false) }}"
       tags:
         - azure
-        - auth
+        - preview
 
-    - name: Start Azure Automation runbook job
+    - name: Retrieve runbook definition
       ansible.builtin.uri:
         url: >-
-          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobs/{{ azure_job_name }}?api-version={{ azure_arm_api_version }}
-        method: PUT
-        headers:
-          Authorization: "Bearer {{ azure_access_token }}"
-          Content-Type: application/json
-        body_format: json
-        body:
-          properties:
-            runbook:
-              name: "{{ azure_runbook_name }}"
-        status_code:
-          - 200
-          - 201
-      register: azure_job_create
-      tags:
-        - azure
-        - run
-
-    - name: Poll Azure Automation job until completion
-      ansible.builtin.uri:
-        url: >-
-          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobs/{{ azure_job_name }}?api-version={{ azure_arm_api_version }}
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account
+          }}/runbooks/{{ azure_runbook_name }}?api-version={{ azure_arm_api_version }}
         method: GET
         headers:
           Authorization: "Bearer {{ azure_access_token }}"
         status_code: 200
-      register: azure_job_status
-      until: azure_job_status.json.properties.status in ['Completed', 'Failed', 'Suspended', 'Stopped']
-      retries: 60
-      delay: 15
+      register: runbook_check
       tags:
         - azure
-        - run
+        - preview
 
-    - name: Assert Azure Automation job completed successfully
+    - name: Assert the runbook is published and ready to run
       ansible.builtin.assert:
         that:
-          - azure_job_status.json.properties.status == 'Completed'
+          - runbook_check.json.properties.state == 'Published'
         fail_msg: >-
-          Runbook job {{ azure_job_name }} finished with status
-          {{ azure_job_status.json.properties.status }}.
+          Runbook {{ azure_runbook_name }} is in state
+          {{ runbook_check.json.properties.state }}, not Published. Run
+          01_azure_setup.yml (or publish it manually) before launching
+          Azure - Run Runbook and collect output.
       tags:
         - azure
-        - run
+        - preview
 
-    - name: Fetch Azure Automation job output stream
+    - name: List recent jobs for the runbook's Automation Account
+      # No $filter on runbookName is applied here: the jobs list endpoint
+      # filters on complex OData expressions inconsistently across API
+      # versions, so the raw list is fetched and filtered client-side below.
       ansible.builtin.uri:
         url: >-
-          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobs/{{ azure_job_name }}/output?api-version={{ azure_arm_api_version }}
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account
+          }}/jobs?api-version={{ azure_arm_api_version }}
         method: GET
         headers:
           Authorization: "Bearer {{ azure_access_token }}"
-        return_content: true
         status_code: 200
-      register: azure_job_output
+      register: jobs_check
       tags:
         - azure
-        - collect
+        - preview
 
-    - name: Publish Azure runbook results for workflow/email steps
+    - name: Build list of recent jobs for this runbook
+      ansible.builtin.set_fact:
+        azure_recent_runbook_jobs: >-
+          {{
+            jobs_check.json.value
+            | selectattr('properties.runbook.name', 'equalto', azure_runbook_name)
+            | list
+          }}
+      tags:
+        - azure
+        - preview
+
+    - name: Report Azure runbook preview
+      ansible.builtin.debug:
+        msg:
+          - "Runbook: {{ azure_runbook_name }} (state: {{ runbook_check.json.properties.state }}, type: {{ runbook_check.json.properties.runbookType }})"
+          - "Next job name that Azure - Run Runbook and collect output would create: {{ azure_next_job_name }}"
+          - >-
+            Recent jobs for this runbook ({{ azure_recent_runbook_jobs | length }}):
+            {{ azure_recent_runbook_jobs | map(attribute='name') | list | join(', ') if azure_recent_runbook_jobs | length > 0 else 'none found' }}
+      tags:
+        - azure
+        - preview
+
+    - name: Publish runbook preview results for workflow/email steps
       ansible.builtin.set_stats:
         data:
-          azure_runbook_job_name: "{{ azure_job_name }}"
-          azure_runbook_status: "{{ azure_job_status.json.properties.status }}"
-          azure_runbook_output: "{{ azure_job_output.content }}"
+          azure_preview_runbook_state: "{{ runbook_check.json.properties.state }}"
+          azure_preview_next_job_name: "{{ azure_next_job_name }}"
+          azure_preview_recent_job_count: "{{ azure_recent_runbook_jobs | length }}"
       tags:
         - azure
-        - collect
-
-    - name: Display Azure runbook output
-      ansible.builtin.debug:
-        msg: "{{ azure_job_output.content }}"
-      tags:
-        - azure
-        - collect
+        - preview

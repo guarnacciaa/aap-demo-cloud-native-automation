@@ -1,0 +1,136 @@
+# Description: Read-only pre-flight check for the AWS SSM automation demo.
+# Confirms the Automation document exists, the target instance is registered
+# and online with SSM, and (when configured) the maintenance window exists.
+# Reports the exact parameters that "AWS - Run SSM document and collect
+# output" would pass to start-automation-execution. Never calls
+# start-automation-execution or register-task-with-maintenance-window.
+---
+- name: Preview the AWS SSM Automation execution that would be started
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - ansible.builtin
+
+  vars:
+    aws_region: "{{ aws_region | default('us-east-1') }}"
+    aws_ssm_document_name: "{{ aws_ssm_document_name | mandatory }}"
+    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | mandatory }}"
+
+  environment:
+    # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are injected automatically by
+    # the AAP Amazon Web Services credential; do not redeclare them here or the
+    # play fails when aws_access_key is undefined in the AAP execution context.
+    AWS_DEFAULT_REGION: "{{ aws_region | default('us-east-1') }}"
+
+  tasks:
+    - name: Describe the SSM Automation document
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm describe-document
+          --name {{ aws_ssm_document_name }}
+          --region {{ aws_region }}
+          --output json
+      register: ssm_document_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - aws
+        - preview
+
+    - name: Assert the Automation document exists
+      ansible.builtin.assert:
+        that:
+          - ssm_document_check.rc == 0
+        fail_msg: >-
+          SSM Automation document {{ aws_ssm_document_name }} was not found in
+          {{ aws_region }}. Run 02_aws_setup.yml, or fix aws_ssm_document_name
+          in demo_variables.yml if targeting a pre-existing document.
+      tags:
+        - aws
+        - preview
+
+    - name: Parse SSM document information
+      ansible.builtin.set_fact:
+        ssm_document_info: "{{ (ssm_document_check.stdout | from_json).Document }}"
+      tags:
+        - aws
+        - preview
+
+    - name: Describe SSM registration status of the target instance
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm describe-instance-information
+          --filters Key=InstanceIds,Values={{ aws_ssm_target_instance_id }}
+          --region {{ aws_region }}
+          --output json
+      register: ssm_instance_check
+      changed_when: false
+      tags:
+        - aws
+        - preview
+
+    - name: Parse SSM instance information
+      ansible.builtin.set_fact:
+        ssm_instance_info: "{{ (ssm_instance_check.stdout | from_json).InstanceInformationList | default([]) }}"
+      tags:
+        - aws
+        - preview
+
+    - name: Assert the target instance is registered with SSM and online
+      ansible.builtin.assert:
+        that:
+          - ssm_instance_info | length == 1
+          - ssm_instance_info[0].PingStatus == 'Online'
+        fail_msg: >-
+          Instance {{ aws_ssm_target_instance_id }} is not registered with SSM
+          or its agent is not Online. AWS - Run SSM document and collect
+          output would fail at runtime; see docs/setup.md.
+      tags:
+        - aws
+        - preview
+
+    - name: Describe the configured maintenance window (when set)
+      # Only meaningful once aws_ssm_maintenance_window_id has been copied in
+      # from 02_aws_setup.yml output; skipped entirely at the CHANGE_ME default
+      # so this preview stays useful before that step has run.
+      ansible.builtin.command:
+        cmd: >-
+          aws ssm describe-maintenance-windows
+          --filters Key=Name,Values={{ demo_aws_maintenance_window_name | default('') }}
+          --region {{ aws_region }}
+          --output json
+      register: ssm_mw_check
+      changed_when: false
+      when: aws_ssm_maintenance_window_id is defined and aws_ssm_maintenance_window_id != 'CHANGE_ME'
+      tags:
+        - aws
+        - preview
+
+    - name: Report AWS SSM preview
+      ansible.builtin.debug:
+        msg:
+          - "Automation document: {{ aws_ssm_document_name }} (latest version: {{ ssm_document_info.LatestVersion }}, status: {{ ssm_document_info.Status }})"
+          - >-
+            SSM target {{ aws_ssm_target_instance_id }}: PingStatus
+            {{ ssm_instance_info[0].PingStatus }}, platform
+            {{ ssm_instance_info[0].PlatformType }}.
+          - >-
+            Maintenance window: {{ (ssm_mw_check.stdout | from_json).WindowIdentities
+            | default([]) | length }} matching '{{ demo_aws_maintenance_window_name | default('(not configured)') }}'
+            found.
+          - >-
+            Parameters that AWS - Run SSM document and collect output would pass to
+            start-automation-execution: --document-name {{ aws_ssm_document_name }}
+            --parameters InstanceId={{ aws_ssm_target_instance_id }} --region {{ aws_region }}.
+      tags:
+        - aws
+        - preview
+
+    - name: Publish SSM preview results for workflow/email steps
+      ansible.builtin.set_stats:
+        data:
+          aws_preview_document_status: "{{ ssm_document_info.Status }}"
+          aws_preview_ssm_ping_status: "{{ ssm_instance_info[0].PingStatus }}"
+      tags:
+        - aws
+        - preview
