@@ -17,7 +17,7 @@ cloud console steps are needed.
 
 | Phase | Workflow / playbook | Purpose | Mode |
 |---|---|---|---|
-| 0. Pre-flight (optional) | `Azure - Connectivity check (dry run)`, `Azure - Runbook preview (dry run)`, `AWS - Connectivity check (dry run)`, `AWS - SSM preview (dry run)` | Read-only checks before mutating anything — see [Dry-run / preview templates](#dry-run--preview-templates) | Always |
+| 0. Pre-flight (optional) | `Azure - Connectivity check (dry run)`, `Azure - Permissions check (dry run)`, `Azure - Runbook preview (dry run)`, `AWS - Connectivity check (dry run)`, `AWS - Permissions check (dry run)`, `AWS - SSM preview (dry run)`, `Network - Connectivity path check (dry run)`, `Notify - SMTP preflight check (dry run)` | Read-only checks before mutating anything — see [Dry-run / preview templates](#dry-run--preview-templates) | Always |
 | 1. Setup | `WF - Demo setup` | Provision Azure runbook, EC2 instance, SSM document, maintenance window | Lab/dev only |
 | 2. Azure scenario | `WF - Azure Runbook execute and collect` | Run runbook and collect output | Always |
 | 2. Azure scenario | `WF - Azure Runbook schedule` | Create recurring runbook schedule | Always |
@@ -118,11 +118,15 @@ playbooks/
     azure_runbook_run.yml
     azure_runbook_schedule.yml
     azure_precheck_connectivity.yml   Dry-run: Azure token + Automation Account reachability
+    azure_precheck_permissions.yml    Dry-run: Azure RBAC action check on the resource group
     azure_runbook_preview.yml         Dry-run: runbook state + recent jobs, never starts a job
     aws_ssm_run_document.yml
     aws_ssm_schedule_maintenance.yml
     aws_precheck_connectivity.yml     Dry-run: AWS auth + SSM agent online check
+    aws_precheck_permissions.yml      Dry-run: AWS IAM action simulation, never performs the actions
     aws_ssm_preview.yml               Dry-run: document/instance/window checks, never starts an execution
+    precheck_network_path.yml         Dry-run: TCP reachability to Azure/AWS API endpoints (no auth)
+    precheck_smtp.yml                 Dry-run: SMTP reachability + STARTTLS/LOGIN, never sends a message
     notify_results.yml
 group_vars/all/
   demo_variables.yml.example
@@ -132,6 +136,8 @@ group_vars/all/
   job_templates_infra.yml, workflow_templates_infra.yml   Lab/dev-only provisioning/teardown objects
 context/
   execution-environment.yml   Custom EE with awscli
+files/
+  smtp_auth_check.py   STARTTLS/LOGIN-only helper used by precheck_smtp.yml
 docs/
   setup.md, procedures.md, testing.md, verification.md
 ```
@@ -185,9 +191,13 @@ Read-only checks, useful in both deployment modes. Never wired into any workflow
 | Template | Playbook | Checks |
 |---|---|---|
 | Azure - Connectivity check (dry run) | `demo/azure_precheck_connectivity.yml` | Acquires an Azure token (SP or MSI) and confirms the Automation Account is reachable |
+| Azure - Permissions check (dry run) | `demo/azure_precheck_permissions.yml` | Confirms the configured identity's RBAC role actually grants every action the scenario templates perform — a Reader-level identity passes the connectivity check above but fails here |
 | Azure - Runbook preview (dry run) | `demo/azure_runbook_preview.yml` | Confirms the runbook is published, lists its recent jobs, reports the job name pattern the real run would create — never starts a job |
 | AWS - Connectivity check (dry run) | `demo/aws_precheck_connectivity.yml` | Confirms AWS auth and that the SSM target instance is registered and online |
+| AWS - Permissions check (dry run) | `demo/aws_precheck_permissions.yml` | Uses `aws iam simulate-principal-policy` to confirm every SSM action the scenario templates call evaluates to allowed, without performing any of them |
 | AWS - SSM preview (dry run) | `demo/aws_ssm_preview.yml` | Confirms the Automation document and maintenance window exist, reports the parameters the real run would pass to `start-automation-execution` — never starts an execution |
+| Network - Connectivity path check (dry run) | `demo/precheck_network_path.yml` | Opens a plain TCP connection (no auth) to the Azure ARM/AAD and AWS STS/SSM/EC2 endpoints, isolating firewall/proxy/DNS problems from credential problems |
+| Notify - SMTP preflight check (dry run) | `demo/precheck_smtp.yml` | Confirms the SMTP server is reachable and the account can authenticate (STARTTLS + LOGIN) — no message is sent. Skipped when `enable_email_notification: false` |
 
 ## Collections
 
@@ -236,6 +246,11 @@ Demo-Multicloud
 | Email notification skipped | `enable_email_notification` is `false` (default) | Set to `true` and configure SMTP variables |
 | Azure MSI token request fails (`Managed Identity ... not found` or connection refused to `169.254.169.254`) | `azure_auth_mode: msi` set, but the AAP execution node/EE container does not run on Azure, or no Managed Identity is enabled on it | Enable a system- or user-assigned identity on the Azure resource running the execution node, or set `azure_auth_mode: service_principal` and configure `vault_azure_client_id`/`vault_azure_client_secret` instead |
 | `Azure - Runbook preview (dry run)` fails with runbook state not `Published` | Runbook created but never published, or deleted outside Ansible | Run `01_azure_setup.yml` again (idempotent) to republish it |
+| `Azure - Permissions check (dry run)` fails on a specific action | Configured identity has a role narrower than Automation Contributor on the resource group | Assign Automation Contributor (or Contributor) on `azure_automation_resource_group` |
+| `AWS - Permissions check (dry run)` fails on `simulate-principal-policy` itself (not on an action) | Caller lacks `iam:SimulatePrincipalPolicy` on its own ARN | Attach a policy granting `iam:SimulatePrincipalPolicy` scoped to the caller's own ARN (self-test only, no other permissions) |
+| `Network - Connectivity path check (dry run)` reports an endpoint unreachable | Outbound HTTPS blocked by firewall/proxy, or DNS resolution failure from the AAP execution node | Check egress rules for port 443 and DNS resolution before assuming a credentials problem |
+| `Notify - SMTP preflight check (dry run)` fails on port reachability | SMTP host/port blocked by firewall, or wrong port for the provider | Confirm `smtp_host`/`smtp_port` and that egress on that port is allowed |
+| `Notify - SMTP preflight check (dry run)` fails on authentication | Wrong `smtp_username`/`vault_smtp_password`, or STARTTLS required but `smtp_use_tls: false` | Verify credentials; most providers require `smtp_use_tls: true` on port 587 |
 
 ## Reset
 

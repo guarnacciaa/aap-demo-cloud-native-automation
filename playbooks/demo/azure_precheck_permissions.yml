@@ -1,0 +1,178 @@
+# Description: Read-only RBAC permission check for the Azure Automation
+# scenario. azure_precheck_connectivity.yml only proves the configured
+# identity can authenticate and that the Automation Account is reachable —
+# a Reader-level identity passes that check but still fails at runtime on
+# any write action (start a job, publish a runbook, create a schedule).
+# This playbook calls the effective-permissions API for the resource group
+# and asserts every action the scenario templates actually perform is
+# granted. Never creates, modifies, or deletes anything.
+---
+- name: Check Azure RBAC permissions for the Automation scenario
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - ansible.builtin
+
+  vars:
+    azure_automation_resource_group: "{{ azure_automation_resource_group | mandatory }}"
+    azure_arm_api_version: "2024-10-23"
+    azure_authorization_api_version: "2022-04-01"
+    # Actions performed by azure_runbook_run.yml, azure_runbook_schedule.yml,
+    # and the preview/connectivity dry-run playbooks. Keep this list in sync
+    # with any new Azure Automation write task added to those playbooks.
+    azure_required_automation_actions:
+      - Microsoft.Automation/automationAccounts/read
+      - Microsoft.Automation/automationAccounts/runbooks/read
+      - Microsoft.Automation/automationAccounts/jobs/read
+      - Microsoft.Automation/automationAccounts/jobs/write
+      - Microsoft.Automation/automationAccounts/jobSchedules/write
+      - Microsoft.Automation/automationAccounts/schedules/write
+
+  pre_tasks:
+    - name: Resolve Azure credentials from AAP credential injection or Ansible variables
+      # The AAP Azure Service Principal credential injects AZURE_SUBSCRIPTION_ID,
+      # AZURE_CLIENT_ID, AZURE_SECRET, and AZURE_TENANT as environment variables.
+      # When running locally with demo_variables.yml those Ansible variables are
+      # already defined at higher precedence and take priority over the env lookup.
+      ansible.builtin.set_fact:
+        azure_subscription_id: >-
+          {{ azure_subscription_id
+             if (azure_subscription_id | default('')) | length > 0
+             else lookup('env', 'AZURE_SUBSCRIPTION_ID') }}
+        azure_tenant_id: >-
+          {{ azure_tenant_id
+             if (azure_tenant_id | default('')) | length > 0
+             else lookup('env', 'AZURE_TENANT') }}
+        azure_client_id: >-
+          {{ azure_client_id
+             if (azure_client_id | default('')) | length > 0
+             else lookup('env', 'AZURE_CLIENT_ID') }}
+        azure_client_secret: >-
+          {{ azure_client_secret
+             if (azure_client_secret | default('')) | length > 0
+             else lookup('env', 'AZURE_SECRET') }}
+      no_log: "{{ demo_no_log | default(false) }}"
+      tags:
+        - always
+
+  tasks:
+    - name: Obtain Azure AD access token via Service Principal (client credentials)
+      ansible.builtin.uri:
+        url: "https://login.microsoftonline.com/{{ azure_tenant_id }}/oauth2/v2.0/token"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          grant_type: client_credentials
+          client_id: "{{ azure_client_id }}"
+          client_secret: "{{ azure_client_secret }}"
+          scope: https://management.azure.com/.default
+        status_code: 200
+      register: azure_token_sp
+      when: azure_auth_mode | default('service_principal') == 'service_principal'
+      no_log: "{{ demo_no_log | default(false) }}"
+      tags:
+        - azure
+        - precheck
+
+    - name: Obtain Azure AD access token via Managed Identity (IMDS)
+      ansible.builtin.uri:
+        url: "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/"
+        method: GET
+        headers:
+          Metadata: "true"
+        status_code: 200
+      register: azure_token_msi
+      when: azure_auth_mode | default('service_principal') == 'msi'
+      tags:
+        - azure
+        - precheck
+
+    - name: Normalize Azure access token regardless of auth mode
+      ansible.builtin.set_fact:
+        azure_access_token: >-
+          {{ (azure_token_sp.json.access_token) if (azure_auth_mode | default('service_principal') == 'service_principal') else (azure_token_msi.json.access_token) }}
+      no_log: "{{ demo_no_log | default(false) }}"
+      tags:
+        - azure
+        - precheck
+
+    # Microsoft.Authorization/permissions/list-for-resource-group returns the
+    # caller's OWN effective permissions at that scope, so it works without
+    # needing to look up the service principal's object ID via Microsoft
+    # Graph (which would require an extra API permission this demo does not
+    # otherwise need).
+    - name: Retrieve effective permissions on the Automation resource group
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id
+          }}/resourceGroups/{{ azure_automation_resource_group
+          }}/providers/Microsoft.Authorization/permissions?api-version={{ azure_authorization_api_version }}
+        method: GET
+        headers:
+          Authorization: "Bearer {{ azure_access_token }}"
+        status_code: 200
+      register: azure_permissions_check
+      tags:
+        - azure
+        - precheck
+
+    - name: Flatten granted and denied actions from all role assignments
+      ansible.builtin.set_fact:
+        azure_granted_actions: "{{ azure_permissions_check.json.value | map(attribute='actions') | flatten }}"
+        azure_denied_actions: "{{ azure_permissions_check.json.value | map(attribute='notActions') | flatten }}"
+      tags:
+        - azure
+        - precheck
+
+    # This is a heuristic, not a full evaluation of Azure's RBAC wildcard
+    # grammar: it recognizes an exact action match, a namespace-level
+    # wildcard (Microsoft.Automation/*), and the tenant-wide "*" (Owner/
+    # Contributor) wildcard. It does NOT resolve partial-segment wildcards
+    # (e.g. Microsoft.Automation/automationAccounts/*/read), so an unusually
+    # narrow custom role could still pass here and fail at runtime. Treat
+    # this as a fast pre-flight signal, not a substitute for the real dry run
+    # (azure_runbook_preview.yml).
+    - name: Assert every required action is granted and not explicitly denied
+      ansible.builtin.assert:
+        that:
+          - >-
+            required_action in azure_granted_actions
+            or (required_action.split('/')[0] ~ '/*') in azure_granted_actions
+            or '*' in azure_granted_actions
+          - >-
+            required_action not in azure_denied_actions
+            and (required_action.split('/')[0] ~ '/*') not in azure_denied_actions
+            and '*' not in azure_denied_actions
+        fail_msg: >-
+          Action {{ required_action }} is not granted to the configured Azure
+          credential on resource group {{ azure_automation_resource_group }}.
+          Assign a role that includes it (Automation Contributor covers all
+          actions checked here) or a broader role (Contributor) on this
+          resource group — see docs/setup.md.
+      loop: "{{ azure_required_automation_actions }}"
+      loop_control:
+        loop_var: required_action
+        label: "{{ required_action }}"
+      tags:
+        - azure
+        - precheck
+
+    - name: Report Azure RBAC permission check results
+      ansible.builtin.debug:
+        msg:
+          - >-
+            All {{ azure_required_automation_actions | length }} required Automation
+            actions are granted on resource group {{ azure_automation_resource_group }}.
+          - "Total distinct actions granted at this scope: {{ azure_granted_actions | unique | length }}"
+      tags:
+        - azure
+        - precheck
+
+    - name: Publish permission check results for workflow/email steps
+      ansible.builtin.set_stats:
+        data:
+          azure_permission_check_passed: true
+          azure_permission_check_action_count: "{{ azure_required_automation_actions | length }}"
+      tags:
+        - azure
+        - precheck

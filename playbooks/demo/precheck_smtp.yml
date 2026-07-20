@@ -1,0 +1,84 @@
+# Description: Read-only preflight check for the email notification step.
+# Confirms the SMTP server configured for Notify - Email automation results
+# is reachable and that the account can authenticate (STARTTLS + LOGIN only)
+# — no message is ever sent. Skips entirely when enable_email_notification
+# is false, since notify_results.yml is never launched in that case either.
+---
+- name: Check SMTP connectivity and authentication for email notifications
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - ansible.builtin
+
+  vars:
+    enable_email_notification: "{{ enable_email_notification | default(false) }}"
+    smtp_use_tls: "{{ smtp_use_tls | default(true) }}"
+
+  pre_tasks:
+    - name: Skip SMTP check when email notification is disabled
+      ansible.builtin.meta: end_play
+      when: not (enable_email_notification | bool)
+      tags:
+        - always
+
+    - name: Validate required SMTP variables
+      ansible.builtin.assert:
+        that:
+          - smtp_host is defined
+          - smtp_host != "CHANGE_ME"
+          - notification_to is defined
+        fail_msg: >-
+          Configure smtp_host, smtp_username, and notification_to in
+          demo_variables.yml (and vault_smtp_password in vault.yml) before
+          running this check, or leave enable_email_notification: false to
+          skip email notification entirely.
+      tags:
+        - always
+
+  tasks:
+    - name: Confirm the SMTP port is reachable
+      ansible.builtin.wait_for:
+        host: "{{ smtp_host }}"
+        port: "{{ smtp_port | int }}"
+        timeout: 10
+        state: started
+      tags:
+        - notify
+        - precheck
+
+    - name: Test SMTP authentication without sending a message
+      # No certified/validated Ansible module performs an auth-only SMTP
+      # test — the only option, community.general.mail (used by
+      # notify_results.yml), always sends a real message. This inline
+      # script does the STARTTLS+LOGIN handshake and quits. Credentials are
+      # passed via environment variables, never argv, so they never appear
+      # in the process list or Ansible task output.
+      ansible.builtin.script:
+        cmd: >-
+          files/smtp_auth_check.py {{ smtp_host }} {{ smtp_port }}
+          {{ 'true' if smtp_use_tls | bool else 'false' }}
+      environment:
+        SMTP_USERNAME: "{{ smtp_username }}"
+        SMTP_PASSWORD: "{{ smtp_password }}"
+      register: smtp_auth_check
+      changed_when: false
+      no_log: "{{ demo_no_log | default(false) }}"
+      tags:
+        - notify
+        - precheck
+
+    - name: Report SMTP check results
+      ansible.builtin.debug:
+        msg: "{{ smtp_auth_check.stdout_lines }}"
+      tags:
+        - notify
+        - precheck
+
+    - name: Publish SMTP check results for workflow/email steps
+      ansible.builtin.set_stats:
+        data:
+          smtp_precheck_host: "{{ smtp_host }}"
+          smtp_precheck_passed: "{{ smtp_auth_check.rc == 0 }}"
+      tags:
+        - notify
+        - precheck

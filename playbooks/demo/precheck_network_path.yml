@@ -1,0 +1,104 @@
+# Description: Read-only network path check to the Azure and AWS API
+# endpoints this demo calls. Deliberately distinct from
+# azure_precheck_connectivity.yml / aws_precheck_connectivity.yml, which
+# prove credentials work but cannot tell a firewall/proxy/DNS problem apart
+# from a bad credential (both surface as a failed HTTPS call). This playbook
+# opens a plain TCP connection to each endpoint with no authentication at
+# all, so it isolates the network path as a variable before troubleshooting
+# credentials. Never sends any authenticated request.
+---
+- name: Check network reachability to Azure and AWS API endpoints
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - ansible.builtin
+
+  vars:
+    aws_region: "{{ aws_region | default('us-east-1') }}"
+    # Endpoints this demo's playbooks call directly. AWS SSM operations run
+    # via the aws CLI (ssm/ec2/sts control-plane APIs), not the SSM agent
+    # endpoints (ssmmessages/ec2messages) that the target instance itself
+    # uses to reach SSM — those are not relevant from AAP's execution node.
+    network_path_targets:
+      - name: Azure Resource Manager
+        host: management.azure.com
+        port: 443
+      - name: Azure AD token endpoint
+        host: login.microsoftonline.com
+        port: 443
+      - name: AWS STS
+        host: "sts.amazonaws.com"
+        port: 443
+      - name: AWS SSM
+        host: "ssm.{{ aws_region }}.amazonaws.com"
+        port: 443
+      - name: AWS EC2
+        host: "ec2.{{ aws_region }}.amazonaws.com"
+        port: 443
+
+  tasks:
+    - name: Test TCP reachability to each cloud API endpoint
+      ansible.builtin.wait_for:
+        host: "{{ item.host }}"
+        port: "{{ item.port }}"
+        timeout: 5
+        state: started
+      loop: "{{ network_path_targets }}"
+      loop_control:
+        label: "{{ item.name }} ({{ item.host }}:{{ item.port }})"
+      register: network_path_results
+      ignore_errors: true
+      tags:
+        - network
+        - precheck
+
+    # wait_for's own failure message is generic ("Timeout when waiting for...");
+    # this pairs each result back with its endpoint name so the report and the
+    # final assert can name exactly which endpoint failed.
+    - name: Build a pass/fail summary per endpoint
+      ansible.builtin.set_fact:
+        network_path_summary: >-
+          {{
+            network_path_summary | default([])
+            + [{'name': item.item.name, 'host': item.item.host, 'port': item.item.port, 'reachable': not item.failed}]
+          }}
+      loop: "{{ network_path_results.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      tags:
+        - network
+        - precheck
+
+    - name: Report network path check results
+      ansible.builtin.debug:
+        msg: >-
+          {{ item.name }} ({{ item.host }}:{{ item.port }}):
+          {{ 'reachable' if item.reachable else 'UNREACHABLE' }}
+      loop: "{{ network_path_summary }}"
+      loop_control:
+        label: "{{ item.name }}"
+      tags:
+        - network
+        - precheck
+
+    - name: Assert every required endpoint is reachable
+      ansible.builtin.assert:
+        that:
+          - network_path_summary | selectattr('reachable', 'equalto', false) | list | length == 0
+        fail_msg: >-
+          Unreachable endpoints: {{ network_path_summary | rejectattr('reachable') | map(attribute='name') | join(', ') }}.
+          Check outbound HTTPS (443) firewall/proxy rules and DNS resolution
+          from the AAP execution node before assuming a credentials problem —
+          see docs/setup.md.
+      tags:
+        - network
+        - precheck
+
+    - name: Publish network path check results for workflow/email steps
+      ansible.builtin.set_stats:
+        data:
+          network_path_all_reachable: "{{ network_path_summary | rejectattr('reachable') | list | length == 0 }}"
+          network_path_unreachable_count: "{{ network_path_summary | rejectattr('reachable') | list | length }}"
+      tags:
+        - network
+        - precheck

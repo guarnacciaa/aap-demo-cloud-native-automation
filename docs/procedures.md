@@ -14,9 +14,13 @@ workflows below to confirm credentials and target resources are reachable.
 
 ```bash
 ansible-playbook playbooks/demo/azure_precheck_connectivity.yml --vault-id @prompt
+ansible-playbook playbooks/demo/azure_precheck_permissions.yml --vault-id @prompt
 ansible-playbook playbooks/demo/azure_runbook_preview.yml --vault-id @prompt
 ansible-playbook playbooks/demo/aws_precheck_connectivity.yml --vault-id @prompt
+ansible-playbook playbooks/demo/aws_precheck_permissions.yml --vault-id @prompt
 ansible-playbook playbooks/demo/aws_ssm_preview.yml --vault-id @prompt
+ansible-playbook playbooks/demo/precheck_network_path.yml --vault-id @prompt
+ansible-playbook playbooks/demo/precheck_smtp.yml --vault-id @prompt
 ```
 
 ## Azure Workflow 1 — Run runbook

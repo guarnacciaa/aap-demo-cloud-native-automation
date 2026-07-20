@@ -53,9 +53,13 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | AWS - Schedule SSM via maintenance window | Pass | 2026-06-22 | `failed=0 changed=1`; task registered in maintenance window |
 | Notify - Email automation results | Not tested | — | |
 | Azure - Connectivity check (dry run) | Not tested | — | New job template |
+| Azure - Permissions check (dry run) | Not tested | — | New job template |
 | Azure - Runbook preview (dry run) | Not tested | — | New job template |
 | AWS - Connectivity check (dry run) | Not tested | — | New job template |
+| AWS - Permissions check (dry run) | Not tested | — | New job template; requires iam:SimulatePrincipalPolicy on the caller's own ARN |
 | AWS - SSM preview (dry run) | Not tested | — | New job template |
+| Network - Connectivity path check (dry run) | Not tested | — | New job template |
+| Notify - SMTP preflight check (dry run) | Not tested | — | New job template |
 
 ### Workflows
 
@@ -70,6 +74,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 ## Open issues
 
+- **2026-07-20**: Added four new preliminary check job templates (`Azure - Permissions check (dry run)`, `AWS - Permissions check (dry run)`, `Network - Connectivity path check (dry run)`, `Notify - SMTP preflight check (dry run)`) plus their playbooks and the `files/smtp_auth_check.py` helper. None have been run yet — the `AWS - Permissions check` template additionally requires `iam:SimulatePrincipalPolicy` on the caller's own ARN (see docs/setup.md), which is not yet confirmed present on the demo's AWS IAM user.
 - **2026-07-16**: Added `azure_auth_mode` (Service Principal / Managed Identity) and `demo_manage_infrastructure` (deployment modes) support, plus four new dry-run job templates. This reset several previously-`Pass` rows to `Not tested` (see Status summary above) because the underlying playbooks changed; re-verify the default `service_principal` / `demo_manage_infrastructure: true` path end-to-end before considering this a regression risk. `msi` mode and `demo_manage_infrastructure: false` have not been tested at all yet.
 - **Fixed 2026-06-25**: `02_aws_setup.yml` and `02_aws_teardown.yml` — replaced deprecated `create_instance_profile`/`delete_instance_profile` options on `amazon.aws.iam_role` with explicit `amazon.aws.iam_instance_profile` tasks. Teardown now deletes the instance profile before the role (required ordering). The `assume_role_policy_document_raw` return value deprecation and residual `delete_instance_profile` warning on `state: absent` are upstream collection behavior, not suppressible at playbook level without disabling all warnings.
 

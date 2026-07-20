@@ -199,6 +199,10 @@ smtp_port: 587
 smtp_username: notifier@example.com
 # smtp_password is mapped from vault at the top of this file.
 notification_to: ops@example.com
+# Used by both notify_results.yml (secure: starttls) and the
+# Notify - SMTP preflight check (dry run) job template. Set to false only
+# for a relay that never uses STARTTLS on this port.
+smtp_use_tls: true
 
 # ============================================================================
 # Credential names (must match credentials.yml) [ALWAYS REQUIRED]

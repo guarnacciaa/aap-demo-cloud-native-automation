@@ -1,0 +1,139 @@
+# Description: Read-only IAM permission check for the AWS SSM scenario.
+# aws_precheck_connectivity.yml only proves the configured IAM identity can
+# authenticate and that the SSM target is registered — a read-only identity
+# passes that check but still fails at runtime on any write action (start an
+# Automation execution, register a maintenance window task). This playbook
+# uses `aws iam simulate-principal-policy`, which evaluates whether specific
+# actions WOULD be allowed for the caller without ever performing them, and
+# asserts every action the scenario templates actually call is allowed.
+# Never starts, registers, or deletes anything.
+---
+- name: Check AWS IAM permissions for the SSM Automation scenario
+  hosts: localhost
+  gather_facts: false
+  collections:
+    - ansible.builtin
+
+  vars:
+    aws_region: "{{ aws_region | default('us-east-1') }}"
+    # Actions performed by aws_ssm_run_document.yml,
+    # aws_ssm_schedule_maintenance.yml, and the preview/connectivity dry-run
+    # playbooks. Keep this list in sync with any new SSM write task added to
+    # those playbooks.
+    aws_required_iam_actions:
+      - ssm:DescribeInstanceInformation
+      - ssm:DescribeDocument
+      - ssm:StartAutomationExecution
+      - ssm:GetAutomationExecution
+      - ssm:DescribeMaintenanceWindows
+      - ssm:RegisterTaskWithMaintenanceWindow
+
+  environment:
+    # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are injected automatically by
+    # the AAP Amazon Web Services credential; do not redeclare them here or the
+    # play fails when aws_access_key is undefined in the AAP execution context.
+    AWS_DEFAULT_REGION: "{{ aws_region | default('us-east-1') }}"
+
+  tasks:
+    - name: Confirm AWS credentials can authenticate
+      # sts get-caller-identity fails outright (non-zero rc) on invalid/expired
+      # credentials, so a successful call already proves AWS auth works; its
+      # Arn is also the --policy-source-arn simulate-principal-policy needs below.
+      ansible.builtin.command:
+        cmd: >-
+          aws sts get-caller-identity
+          --region {{ aws_region }}
+          --output json
+      register: aws_caller_check
+      changed_when: false
+      tags:
+        - aws
+        - precheck
+
+    - name: Parse caller identity
+      ansible.builtin.set_fact:
+        aws_caller_identity: "{{ aws_caller_check.stdout | from_json }}"
+      tags:
+        - aws
+        - precheck
+
+    # simulate-principal-policy only works for IAM users/roles (not the
+    # account root user or federated/assumed-role session ARNs in some
+    # configurations) and itself requires the caller to hold
+    # iam:SimulatePrincipalPolicy on their own ARN — see docs/setup.md.
+    - name: Simulate the required IAM actions without performing any of them
+      ansible.builtin.command:
+        cmd: >-
+          aws iam simulate-principal-policy
+          --policy-source-arn {{ aws_caller_identity.Arn }}
+          --action-names {{ aws_required_iam_actions | join(' ') }}
+          --output json
+      register: aws_permission_check
+      changed_when: false
+      failed_when: false
+      tags:
+        - aws
+        - precheck
+
+    - name: Assert the simulation call itself succeeded
+      ansible.builtin.assert:
+        that:
+          - aws_permission_check.rc == 0
+        fail_msg: >-
+          aws iam simulate-principal-policy failed
+          ({{ aws_permission_check.stderr | default('no stderr captured') }}).
+          The caller {{ aws_caller_identity.Arn }} likely lacks
+          iam:SimulatePrincipalPolicy on its own ARN — attach it (self-only
+          scope, no other permissions granted) and re-run this check. See
+          docs/setup.md.
+      tags:
+        - aws
+        - precheck
+
+    - name: Parse simulation results
+      ansible.builtin.set_fact:
+        aws_permission_results: "{{ (aws_permission_check.stdout | from_json).EvaluationResults }}"
+      tags:
+        - aws
+        - precheck
+
+    - name: Assert every required action evaluates to allowed
+      ansible.builtin.assert:
+        that:
+          - >-
+            aws_permission_results
+            | selectattr('EvalActionName', 'equalto', required_action)
+            | map(attribute='EvalDecision') | first == 'allowed'
+        fail_msg: >-
+          Action {{ required_action }} evaluates to
+          "{{ aws_permission_results | selectattr('EvalActionName', 'equalto', required_action) | map(attribute='EvalDecision') | first }}"
+          for {{ aws_caller_identity.Arn }}. Attach a policy granting this
+          action before launching the scenario job templates — see
+          docs/setup.md.
+      loop: "{{ aws_required_iam_actions }}"
+      loop_control:
+        loop_var: required_action
+        label: "{{ required_action }}"
+      tags:
+        - aws
+        - precheck
+
+    - name: Report AWS IAM permission check results
+      ansible.builtin.debug:
+        msg:
+          - "Identity: {{ aws_caller_identity.Arn }}"
+          - >-
+            All {{ aws_required_iam_actions | length }} required SSM actions
+            evaluate to allowed: {{ aws_required_iam_actions | join(', ') }}.
+      tags:
+        - aws
+        - precheck
+
+    - name: Publish permission check results for workflow/email steps
+      ansible.builtin.set_stats:
+        data:
+          aws_permission_check_passed: true
+          aws_permission_check_action_count: "{{ aws_required_iam_actions | length }}"
+      tags:
+        - aws
+        - precheck

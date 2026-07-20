@@ -36,6 +36,16 @@ When `demo_manage_infrastructure: false`, request credentials limited to:
 
 Do not request the `iam:CreateRole`/`iam:AttachRolePolicy`/`iam:CreateInstanceProfile`-family AWS permissions or the `Microsoft.Automation/automationAccounts/write`/resource-group-create Azure permissions listed below; they are only used by the setup and teardown playbooks, which are not deployed in this mode.
 
+### Optional dry-run/preview job templates — additional permissions
+
+Four read-only checks beyond the connectivity/preview templates above need a
+little more than pure Reader access to prove anything useful; each is
+optional and safe to skip if you would rather not grant the extra permission:
+
+- **`Azure - Permissions check (dry run)`** calls `Microsoft.Authorization/permissions/list-for-resource-group`, which every role holder can call at their own scope — no extra Azure permission is required beyond the roles above.
+- **`AWS - Permissions check (dry run)`** calls `aws iam simulate-principal-policy`, which requires the caller to additionally hold `iam:SimulatePrincipalPolicy` **scoped to its own ARN** (a self-test permission; it does not grant access to anything else). Without it the check fails on the simulation call itself, with a message naming the missing permission.
+- **`Network - Connectivity path check (dry run)`** and **`Notify - SMTP preflight check (dry run)`** perform no authenticated calls at all (plain TCP connect, and STARTTLS+LOGIN respectively) and need no additional cloud IAM/RBAC permission.
+
 ## Azure authentication mode: Service Principal vs Managed Identity
 
 `azure_auth_mode` in `group_vars/all/demo_variables.yml` (default `service_principal`) controls how every Azure Automation REST API call (token acquisition in `azure_runbook_run.yml`, `azure_runbook_schedule.yml`, `01_azure_setup.yml`, `01_azure_teardown.yml`, and the dry-run playbooks) authenticates to Azure. This is independent of `demo_manage_infrastructure` above — it applies in every deployment mode.
@@ -295,11 +305,14 @@ execution environment, job templates, and workflow templates.
 ansible-playbook playbooks/verify.yml --vault-id @prompt
 ```
 
-Optionally, launch the four read-only dry-run job templates from the Controller UI
-(`Azure - Connectivity check (dry run)`, `Azure - Runbook preview (dry run)`,
-`AWS - Connectivity check (dry run)`, `AWS - SSM preview (dry run)`) before the
-scenario workflows — see [docs/procedures.md](procedures.md) for the equivalent
-`ansible-playbook` invocations. They never create, modify, or delete any resource.
+Optionally, launch the eight read-only dry-run job templates from the Controller UI
+(`Azure - Connectivity check (dry run)`, `Azure - Permissions check (dry run)`,
+`Azure - Runbook preview (dry run)`, `AWS - Connectivity check (dry run)`,
+`AWS - Permissions check (dry run)`, `AWS - SSM preview (dry run)`,
+`Network - Connectivity path check (dry run)`, `Notify - SMTP preflight check
+(dry run)`) before the scenario workflows — see
+[docs/procedures.md](procedures.md) for the equivalent `ansible-playbook`
+invocations. They never create, modify, or delete any resource.
 
 ## Hybrid REST/CLI approach
 
