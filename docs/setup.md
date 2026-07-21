@@ -233,6 +233,13 @@ Edit `vault.yml` (after encrypting) and set:
 - `vault_aws_access_key`, `vault_aws_secret_key`
 - `vault_smtp_password` (only when `enable_email_notification: true`)
 
+`smtp_username`/`vault_smtp_password` are not passed to the Notify job templates as
+plain `extra_vars` (unlike `smtp_host`/`smtp_port`/`notification_to`). They are instead
+stored on the **SMTP Credentials** custom credential (`smtp_credential_name` in
+`demo_variables.yml`, created by `group_vars/all/credential_types.yml` and
+`credentials.yml`), which injects them as `extra_vars` at job-run time — the password
+is never returned in plaintext by the Controller API/UI, before or after injection.
+
 ## Step 3 — Build and push the custom Execution Environment
 
 The demo job templates require a custom EE with `awscli`, `boto3`, `amazon.aws`,

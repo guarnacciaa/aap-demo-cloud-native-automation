@@ -93,9 +93,26 @@ controller_templates:
     project: "{{ demo_project_name }}"
     playbook: playbooks/demo/notify_results.yml
     execution_environment: "{{ demo_execution_environment_name }}"
+    credentials:
+      - "{{ smtp_credential_name }}"
     ask_variables_on_launch: true
     extra_vars:
       enable_email_notification: "{{ enable_email_notification | default(false) }}"
+      # Non-secret SMTP connection settings must be threaded through
+      # extra_vars for the same reason as azure_auth_mode above: AAP's
+      # generated inventory does not reliably auto-load
+      # group_vars/all/demo_variables.yml for playbooks/demo/*.yml, so
+      # notify_results.yml would otherwise fail on undefined variables
+      # whenever enable_email_notification is true. smtp_username/
+      # smtp_password are NOT listed here — the SMTP Credentials credential
+      # above (see group_vars/all/credential_types.yml) injects them as
+      # extra_vars at run time instead, so the password is never stored in
+      # this template's own (plaintext, UI/API-visible) extra_vars.
+      smtp_host: "{{ smtp_host }}"
+      smtp_port: "{{ smtp_port }}"
+      notification_to: "{{ notification_to }}"
+      smtp_use_tls: "{{ smtp_use_tls | default(true) }}"
+      demo_no_log: "{{ demo_no_log }}"
     labels:
       - "{{ demo_label_name }}"
 
@@ -218,8 +235,18 @@ controller_templates:
     project: "{{ demo_project_name }}"
     playbook: playbooks/demo/precheck_smtp.yml
     execution_environment: "{{ demo_execution_environment_name }}"
+    credentials:
+      - "{{ smtp_credential_name }}"
     ask_variables_on_launch: true
     extra_vars:
       enable_email_notification: "{{ enable_email_notification | default(false) }}"
+      # See the comment on Notify - Email automation results above: only the
+      # non-secret SMTP settings go here — smtp_username/smtp_password are
+      # injected by the SMTP Credentials credential instead.
+      smtp_host: "{{ smtp_host }}"
+      smtp_port: "{{ smtp_port }}"
+      notification_to: "{{ notification_to }}"
+      smtp_use_tls: "{{ smtp_use_tls | default(true) }}"
+      demo_no_log: "{{ demo_no_log }}"
     labels:
       - "{{ demo_label_name }}"

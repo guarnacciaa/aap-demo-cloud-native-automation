@@ -210,6 +210,10 @@ smtp_use_tls: true
 
 azure_credential_name: Azure Service Principal
 aws_credential_name: AWS IAM User
+# Custom "SMTP Credentials" credential type (see credential_types.yml) that
+# injects smtp_username/smtp_password as extra_vars at run time, so the
+# password is never stored in plaintext on the Notify job templates.
+smtp_credential_name: SMTP Notification Credentials
 
 # ============================================================================
 # Azure — Automation Account provisioning [LAB/DEV ONLY]

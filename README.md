@@ -132,6 +132,8 @@ group_vars/all/
   demo_variables.yml.example
   organizations.yml, credentials.yml, inventories.yml, projects.yml
   execution_environments.yml, labels.yml
+  credential_types.yml    Custom "SMTP Credentials" type (injects smtp_username/smtp_password)
+  groups.yml, hosts.yml    Azure/AWS groups and hosts inside Demo-Multicloud (see below)
   job_templates.yml, workflow_templates.yml           Always-deployed objects
   job_templates_infra.yml, workflow_templates_infra.yml   Lab/dev-only provisioning/teardown objects
 context/
@@ -183,6 +185,8 @@ The **Setup** and **Teardown** templates are only created in AAP when `demo_mana
 | AWS - Run SSM document and collect output | `demo/aws_ssm_run_document.yml` | Always |
 | AWS - Schedule SSM via maintenance window | `demo/aws_ssm_schedule_maintenance.yml` | Always |
 | Notify - Email automation results | `demo/notify_results.yml` (optional) | Always |
+
+`Notify - Email automation results` and `Notify - SMTP preflight check (dry run)` below use a custom **SMTP Credentials** credential (`group_vars/all/credential_types.yml`) to inject `smtp_username`/`smtp_password` at run time, instead of storing the password in the template's own `extra_vars` — the same secrets-injection principle AAP's built-in Azure/AWS credential types use for `azure_client_secret`/`aws_secret_key`.
 
 ### Dry-run / preview templates
 

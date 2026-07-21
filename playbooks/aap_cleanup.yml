@@ -75,6 +75,17 @@
         - "AWS - Run SSM document and collect output"
         - "AWS - Schedule SSM via maintenance window"
         - "Notify - Email automation results"
+        # Dry-run / preview templates (see group_vars/all/job_templates.yml) —
+        # listed explicitly so `--tags templates` cleans them up without
+        # requiring the organization delete below to cascade-remove them.
+        - "Azure - Connectivity check (dry run)"
+        - "Azure - Permissions check (dry run)"
+        - "Azure - Runbook preview (dry run)"
+        - "AWS - Connectivity check (dry run)"
+        - "AWS - Permissions check (dry run)"
+        - "AWS - SSM preview (dry run)"
+        - "Network - Connectivity path check (dry run)"
+        - "Notify - SMTP preflight check (dry run)"
       ignore_errors: true
       tags:
         - templates
@@ -116,11 +127,23 @@
           type: Amazon Web Services
         - name: "{{ hub_registry_credential_name }}"
           type: Container Registry
+        - name: "{{ smtp_credential_name }}"
+          type: SMTP Credentials
       ignore_errors: true
       tags:
         - credentials
 
-    # --- 6. Execution environment ---
+    # --- 6. Custom credential types (after credentials that reference them) ---
+    - name: Remove custom credential types
+      ansible.controller.credential_type:
+        name: SMTP Credentials
+        state: absent
+        <<: *controller_auth
+      ignore_errors: true
+      tags:
+        - credential_types
+
+    # --- 7. Execution environment ---
     - name: Remove execution environment
       ansible.controller.execution_environment:
         name: "{{ demo_execution_environment_name }}"
@@ -131,7 +154,7 @@
       tags:
         - execution_environments
 
-    # --- 7. Labels ---
+    # --- 8. Labels ---
     # The Controller API does not support deleting labels directly.
     # They are removed when the parent organization is deleted below.
     - name: Labels will be removed with the organization
@@ -140,7 +163,7 @@
       tags:
         - labels
 
-    # --- 8. Organization (last — parent of all objects above) ---
+    # --- 9. Organization (last — parent of all objects above) ---
     - name: Remove organization
       ansible.controller.organization:
         name: "{{ demo_organization_name }}"

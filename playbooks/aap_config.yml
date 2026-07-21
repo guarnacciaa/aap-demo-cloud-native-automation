@@ -153,6 +153,7 @@
       tags:
         - all
         - organizations
+        - credential_types
         - credentials
         - execution_environments
         - inventories
