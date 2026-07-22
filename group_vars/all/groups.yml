@@ -8,4 +8,7 @@ controller_groups:
   - name: aws_automation
     inventory: AWS-Resources
     hosts:
-      - "{{ aws_ssm_target_instance_id }}"
+      # aws_ssm_target_instance_id is optional (see demo_variables.yml.example);
+      # fall back to the document name as a stable inventory host identifier
+      # when the document does not target an SSM-managed instance.
+      - "{{ aws_ssm_target_instance_id | default(aws_ssm_document_name, true) }}"

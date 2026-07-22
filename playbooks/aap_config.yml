@@ -14,9 +14,14 @@
 
   pre_tasks:
     # Core prerequisites — always checked regardless of provider mode.
-    # aws_ssm_target_instance_id, aws_ssm_maintenance_window_id, aws_account_id,
-    # and aws_ssm_service_role_arn are printed by 02_aws_setup.yml and must be
-    # copied into demo_variables.yml before this playbook runs.
+    # aws_ssm_maintenance_window_id, aws_account_id, and aws_ssm_service_role_arn
+    # are printed by 02_aws_setup.yml and must be copied into
+    # demo_variables.yml before this playbook runs. aws_ssm_target_instance_id
+    # is intentionally NOT asserted here: it is optional (see
+    # demo_variables.yml.example) and only relevant for documents that run
+    # commands on an SSM-managed instance. Documents that orchestrate AWS API
+    # calls directly (for example against an EKS cluster) leave it empty and
+    # rely on aws_ssm_document_parameters instead.
     - name: Validate core required variables
       ansible.builtin.assert:
         that:
@@ -24,8 +29,6 @@
           - aap_hostname != "CHANGE_ME"
           - demo_project_scm_url is defined
           - demo_project_scm_url != "CHANGE_ME_GIT_REPO_URL"
-          - aws_ssm_target_instance_id is defined
-          - aws_ssm_target_instance_id != "CHANGE_ME"
           - aws_ssm_maintenance_window_id is defined
           - aws_ssm_maintenance_window_id != "CHANGE_ME"
           - aws_account_id is defined
@@ -34,9 +37,10 @@
           - aws_ssm_service_role_arn != "CHANGE_ME_ROLE_ARN"
         fail_msg: >-
           One or more required variables are still set to CHANGE_ME in demo_variables.yml.
-          Run 02_aws_setup.yml first, then copy all four printed values into demo_variables.yml:
-            aws_ssm_target_instance_id, aws_ssm_maintenance_window_id,
-            aws_account_id, aws_ssm_service_role_arn.
+          Run 02_aws_setup.yml first, then copy the three printed values into demo_variables.yml:
+            aws_ssm_maintenance_window_id, aws_account_id, aws_ssm_service_role_arn.
+          If your document targets an SSM-managed instance, also copy the
+          printed EC2 instance ID into aws_ssm_target_instance_id.
       tags:
         - always
 

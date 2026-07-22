@@ -1,5 +1,9 @@
 # Description: Register SSM Automation task with an existing maintenance window.
 # Customer must pre-create the maintenance window and IAM permissions.
+# aws_ssm_target_instance_id is optional: Targets is only required for
+# documents that run on an SSM-managed instance. Documents that orchestrate
+# AWS API calls directly (for example against an EKS cluster) omit Targets
+# and instead receive their real parameters via aws_ssm_document_parameters.
 ---
 - name: Schedule AWS SSM Automation via maintenance window
   hosts: localhost
@@ -12,7 +16,8 @@
     aws_ssm_document_name: "{{ aws_ssm_document_name | mandatory }}"
     aws_ssm_maintenance_window_id: "{{ aws_ssm_maintenance_window_id | mandatory }}"
     aws_ssm_maintenance_task_name: "{{ aws_ssm_maintenance_task_name | mandatory }}"
-    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | mandatory }}"
+    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | default('') }}"
+    aws_ssm_document_parameters: "{{ aws_ssm_document_parameters | default([]) }}"
 
   environment:
     # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are injected automatically by
@@ -21,6 +26,11 @@
     AWS_DEFAULT_REGION: "{{ aws_region | default('us-east-1') }}"
 
   tasks:
+    # Targets (--targets) identifies an SSM-managed instance to run the
+    # Automation task against; it is not required by the RegisterTaskWith-
+    # MaintenanceWindow API for AUTOMATION tasks whose document does not act
+    # on an instance. In that case the document's real parameters must be
+    # threaded through --task-invocation-parameters instead.
     - name: Register SSM Automation task with maintenance window
       ansible.builtin.command:
         cmd: >-
@@ -30,7 +40,8 @@
           --name {{ aws_ssm_maintenance_task_name }}
           --task-arn arn:aws:ssm:{{ aws_region }}:{{ aws_account_id | default('*') }}:automation-definition/{{ aws_ssm_document_name }}
           --service-role-arn {{ aws_ssm_service_role_arn | mandatory }}
-          --targets Key=InstanceIds,Values={{ aws_ssm_target_instance_id }}
+          {{ ('--targets Key=InstanceIds,Values=' + aws_ssm_target_instance_id) if aws_ssm_target_instance_id | length > 0 else '' }}
+          {{ ('--task-invocation-parameters Automation={Parameters={' + (aws_ssm_document_parameters | join(',')) + '}}') if aws_ssm_document_parameters | length > 0 else '' }}
           --max-concurrency 1
           --max-errors 0
           --priority 1

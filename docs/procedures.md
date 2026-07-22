@@ -37,7 +37,7 @@ ansible-playbook playbooks/demo/precheck_smtp.yml --vault-id @prompt
 ## AWS Workflow 1 — Run SSM document
 
 1. Launch **WF - AWS SSM document execute and collect**.
-2. Provide `aws_ssm_document_name` and `aws_ssm_target_instance_id` if prompted.
+2. Provide `aws_ssm_document_name` if prompted, plus either `aws_ssm_target_instance_id` (instance-targeting documents) or `aws_ssm_document_parameters` (documents that call AWS APIs directly, e.g. against an EKS cluster).
 
 ## AWS Workflow 2 — Schedule via maintenance window
 

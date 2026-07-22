@@ -1,5 +1,9 @@
 # Description: Execute AWS SSM Automation document via AWS CLI and collect outputs.
 # No certified SSM execution module is indexed; aws cli is used intentionally.
+# aws_ssm_target_instance_id is optional: only relevant for documents that run
+# commands on an SSM-managed instance via the agent. Documents that
+# orchestrate AWS API calls directly (for example against an EKS cluster)
+# take their real parameters from aws_ssm_document_parameters instead.
 ---
 - name: Run AWS SSM Automation document and collect output
   hosts: localhost
@@ -10,7 +14,8 @@
   vars:
     aws_region: "{{ aws_region | default('us-east-1') }}"
     aws_ssm_document_name: "{{ aws_ssm_document_name | mandatory }}"
-    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | mandatory }}"
+    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | default('') }}"
+    aws_ssm_document_parameters: "{{ aws_ssm_document_parameters | default([]) }}"
 
   environment:
     # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are injected automatically by
@@ -19,12 +24,30 @@
     AWS_DEFAULT_REGION: "{{ aws_region | default('us-east-1') }}"
 
   tasks:
-    - name: Start SSM Automation execution for target instance
+    # AWS SSM Automation documents define their own parameter schema.
+    # InstanceId is only meaningful for documents that run commands on an
+    # SSM-managed instance via the agent; documents that call AWS APIs
+    # directly (e.g. against an EKS cluster) take arbitrary parameters
+    # instead, supplied via aws_ssm_document_parameters.
+    - name: Compute the parameters for start-automation-execution
+      ansible.builtin.set_fact:
+        aws_ssm_all_parameters: >-
+          {{
+            (
+              (['InstanceId=' + aws_ssm_target_instance_id] if aws_ssm_target_instance_id | length > 0 else [])
+              + aws_ssm_document_parameters
+            ) | join(',')
+          }}
+      tags:
+        - aws
+        - run
+
+    - name: Start SSM Automation execution
       ansible.builtin.command:
         cmd: >-
           aws ssm start-automation-execution
           --document-name {{ aws_ssm_document_name }}
-          --parameters InstanceId={{ aws_ssm_target_instance_id }}
+          {{ ('--parameters ' + aws_ssm_all_parameters) if aws_ssm_all_parameters | length > 0 else '' }}
           --region {{ aws_region }}
           --output json
       register: ssm_start

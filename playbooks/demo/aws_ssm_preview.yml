@@ -1,9 +1,12 @@
 # Description: Read-only pre-flight check for the AWS SSM automation demo.
 # Confirms the Automation document exists, the target instance is registered
-# and online with SSM, and (when configured) the maintenance window exists.
-# Reports the exact parameters that "AWS - Run SSM document and collect
-# output" would pass to start-automation-execution. Never calls
-# start-automation-execution or register-task-with-maintenance-window.
+# and online with SSM (only when aws_ssm_target_instance_id is set — skipped
+# for documents that orchestrate AWS API calls directly instead of running
+# commands on an instance, e.g. against an EKS cluster), and (when
+# configured) the maintenance window exists. Reports the exact parameters
+# that "AWS - Run SSM document and collect output" would pass to
+# start-automation-execution. Never calls start-automation-execution or
+# register-task-with-maintenance-window.
 ---
 - name: Preview the AWS SSM Automation execution that would be started
   hosts: localhost
@@ -14,7 +17,12 @@
   vars:
     aws_region: "{{ aws_region | default('us-east-1') }}"
     aws_ssm_document_name: "{{ aws_ssm_document_name | mandatory }}"
-    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | mandatory }}"
+    # Optional: only set for documents that run aws:runCommand steps against
+    # an SSM-managed instance. Leave empty for documents that orchestrate AWS
+    # API calls directly (for example against an EKS cluster) — see
+    # aws_ssm_document_parameters below.
+    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | default('') }}"
+    aws_ssm_document_parameters: "{{ aws_ssm_document_parameters | default([]) }}"
 
   environment:
     # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are injected automatically by
@@ -56,6 +64,11 @@
         - aws
         - preview
 
+    # aws_ssm_target_instance_id is optional (see vars above): only documents
+    # that run aws:runCommand steps against an SSM-managed instance need this
+    # registration/PingStatus check. Documents that orchestrate AWS API calls
+    # directly (e.g. against an EKS cluster) never register an "instance"
+    # with SSM at all, so this whole check is skipped for them.
     - name: Describe SSM registration status of the target instance
       ansible.builtin.command:
         cmd: >-
@@ -65,6 +78,7 @@
           --output json
       register: ssm_instance_check
       changed_when: false
+      when: aws_ssm_target_instance_id | length > 0
       tags:
         - aws
         - preview
@@ -72,6 +86,7 @@
     - name: Parse SSM instance information
       ansible.builtin.set_fact:
         ssm_instance_info: "{{ (ssm_instance_check.stdout | from_json).InstanceInformationList | default([]) }}"
+      when: aws_ssm_target_instance_id | length > 0
       tags:
         - aws
         - preview
@@ -85,6 +100,26 @@
           Instance {{ aws_ssm_target_instance_id }} is not registered with SSM
           or its agent is not Online. AWS - Run SSM document and collect
           output would fail at runtime; see docs/setup.md.
+      when: aws_ssm_target_instance_id | length > 0
+      tags:
+        - aws
+        - preview
+
+    # AWS SSM Automation documents define their own parameter schema.
+    # InstanceId is only meaningful for documents that run commands on an
+    # SSM-managed instance via the agent; documents that call AWS APIs
+    # directly (e.g. against an EKS cluster) take arbitrary parameters
+    # instead, supplied via aws_ssm_document_parameters. Combine both sources
+    # here so every report line below uses one consistent value.
+    - name: Compute the parameters that would be passed to start-automation-execution
+      ansible.builtin.set_fact:
+        aws_ssm_all_parameters: >-
+          {{
+            (
+              (['InstanceId=' + aws_ssm_target_instance_id] if aws_ssm_target_instance_id | length > 0 else [])
+              + aws_ssm_document_parameters
+            ) | join(',')
+          }}
       tags:
         - aws
         - preview
@@ -111,9 +146,9 @@
         msg:
           - "Automation document: {{ aws_ssm_document_name }} (latest version: {{ ssm_document_info.LatestVersion }}, status: {{ ssm_document_info.Status }})"
           - >-
-            SSM target {{ aws_ssm_target_instance_id }}: PingStatus
-            {{ ssm_instance_info[0].PingStatus }}, platform
-            {{ ssm_instance_info[0].PlatformType }}.
+            {{ ('SSM target ' + aws_ssm_target_instance_id + ': PingStatus ' + ssm_instance_info[0].PingStatus + ', platform ' + ssm_instance_info[0].PlatformType + '.')
+               if aws_ssm_target_instance_id | length > 0
+               else 'No SSM-managed instance target configured — document does not run commands on an instance via the SSM agent.' }}
           - >-
             Maintenance window: {{ (ssm_mw_check.stdout | from_json).WindowIdentities
             | default([]) | length }} matching '{{ demo_aws_maintenance_window_name | default('(not configured)') }}'
@@ -121,7 +156,8 @@
           - >-
             Parameters that AWS - Run SSM document and collect output would pass to
             start-automation-execution: --document-name {{ aws_ssm_document_name }}
-            --parameters InstanceId={{ aws_ssm_target_instance_id }} --region {{ aws_region }}.
+            {{ ('--parameters ' + aws_ssm_all_parameters) if aws_ssm_all_parameters | length > 0 else '(no parameters)' }}
+            --region {{ aws_region }}.
       tags:
         - aws
         - preview
@@ -130,7 +166,7 @@
       ansible.builtin.set_stats:
         data:
           aws_preview_document_status: "{{ ssm_document_info.Status }}"
-          aws_preview_ssm_ping_status: "{{ ssm_instance_info[0].PingStatus }}"
+          aws_preview_ssm_ping_status: "{{ ssm_instance_info[0].PingStatus if aws_ssm_target_instance_id | length > 0 else 'not_applicable' }}"
       tags:
         - aws
         - preview

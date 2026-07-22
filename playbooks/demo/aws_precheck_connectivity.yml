@@ -1,8 +1,10 @@
 # Description: Read-only credential and connectivity check for AWS SSM.
-# Confirms the injected AWS IAM credentials can authenticate and that the
-# configured SSM target instance is registered and online, before any
-# Automation document is started or scheduled. Never starts, registers, or
-# deletes anything.
+# Confirms the injected AWS IAM credentials can authenticate and, when
+# aws_ssm_target_instance_id is set, that the configured SSM target instance
+# is registered and online, before any Automation document is started or
+# scheduled. The instance check is skipped for documents that orchestrate AWS
+# API calls directly instead of running commands on an instance (for example
+# against an EKS cluster). Never starts, registers, or deletes anything.
 ---
 - name: Check AWS credentials and SSM target connectivity
   hosts: localhost
@@ -12,7 +14,7 @@
 
   vars:
     aws_region: "{{ aws_region | default('us-east-1') }}"
-    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | mandatory }}"
+    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | default('') }}"
 
   environment:
     # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are injected automatically by
@@ -42,6 +44,10 @@
         - aws
         - precheck
 
+    # aws_ssm_target_instance_id is optional: skip the instance
+    # registration/PingStatus check entirely for documents that orchestrate
+    # AWS API calls directly instead of running commands on an SSM-managed
+    # instance (for example against an EKS cluster).
     - name: Describe SSM registration status of the target instance
       ansible.builtin.command:
         cmd: >-
@@ -51,6 +57,7 @@
           --output json
       register: ssm_instance_check
       changed_when: false
+      when: aws_ssm_target_instance_id | length > 0
       tags:
         - aws
         - precheck
@@ -58,6 +65,7 @@
     - name: Parse SSM instance information
       ansible.builtin.set_fact:
         ssm_instance_info: "{{ (ssm_instance_check.stdout | from_json).InstanceInformationList | default([]) }}"
+      when: aws_ssm_target_instance_id | length > 0
       tags:
         - aws
         - precheck
@@ -74,6 +82,7 @@
           agent installed, IAM instance profile with
           AmazonSSMManagedInstanceCore attached, and network path to the SSM
           endpoints (see docs/setup.md).
+      when: aws_ssm_target_instance_id | length > 0
       tags:
         - aws
         - precheck
@@ -83,10 +92,9 @@
         msg:
           - "AWS: authenticated as {{ aws_caller_identity.Arn }} in account {{ aws_caller_identity.Account }} (region {{ aws_region }})."
           - >-
-            SSM target {{ aws_ssm_target_instance_id }}: PingStatus
-            {{ ssm_instance_info[0].PingStatus }}, agent version
-            {{ ssm_instance_info[0].AgentVersion }}, platform
-            {{ ssm_instance_info[0].PlatformType }}.
+            {{ ('SSM target ' + aws_ssm_target_instance_id + ': PingStatus ' + ssm_instance_info[0].PingStatus + ', agent version ' + ssm_instance_info[0].AgentVersion + ', platform ' + ssm_instance_info[0].PlatformType + '.')
+               if aws_ssm_target_instance_id | length > 0
+               else 'No SSM-managed instance target configured — document does not run commands on an instance via the SSM agent.' }}
       tags:
         - aws
         - precheck
@@ -95,7 +103,7 @@
       ansible.builtin.set_stats:
         data:
           aws_precheck_account_id: "{{ aws_caller_identity.Account }}"
-          aws_precheck_ssm_ping_status: "{{ ssm_instance_info[0].PingStatus }}"
+          aws_precheck_ssm_ping_status: "{{ ssm_instance_info[0].PingStatus if aws_ssm_target_instance_id | length > 0 else 'not_applicable' }}"
       tags:
         - aws
         - precheck

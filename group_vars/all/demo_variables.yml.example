@@ -105,8 +105,9 @@ demo_project_scm_branch: main
 # AWS SSM settings [ALWAYS REQUIRED]
 # ============================================================================
 # Consumed by the scenario job templates in every deployment mode. In
-# customer/PoC mode (demo_manage_infrastructure: false), aws_ssm_target_instance_id
-# must identify the customer's EXISTING SSM-managed instance.
+# customer/PoC mode (demo_manage_infrastructure: false), these variables
+# must identify the customer's EXISTING SSM Automation document (and,
+# when relevant, an EXISTING SSM-managed instance).
 
 aws_region: us-east-1
 # aws_access_key and aws_secret_key are mapped from vault above.
@@ -114,10 +115,26 @@ aws_region: us-east-1
 # pre-existing document. Create-from-scratch: 02_aws_setup.yml creates it
 # with this name.
 aws_ssm_document_name: aap-demo-ssm-document
-# Bring-your-own: ID of the pre-existing SSM-managed instance to target.
-# Create-from-scratch: populated after running 02_aws_setup.yml — copy the
-# printed EC2 instance ID here.
-aws_ssm_target_instance_id: CHANGE_ME
+# OPTIONAL — leave empty ("") when the Automation document does not target
+# an SSM-managed instance. Set it when the document runs aws:runCommand
+# steps against an EC2 host via the SSM agent:
+#   Bring-your-own: ID of the pre-existing SSM-managed instance to target.
+#   Create-from-scratch: populated after running 02_aws_setup.yml — copy the
+#   printed EC2 instance ID here.
+# Leave empty for documents that orchestrate AWS API calls directly
+# (aws:executeAwsApi, aws:invokeLambdaFunction, etc.) instead of running
+# commands on an instance — for example a document whose real target is an
+# EKS cluster. In that case, supply the document's actual parameters via
+# aws_ssm_document_parameters below instead.
+aws_ssm_target_instance_id: ""
+
+# Extra parameters passed to start-automation-execution / the maintenance
+# window task, as a list of "Key=Value" strings (AWS CLI shorthand syntax).
+# Combined with InstanceId above when aws_ssm_target_instance_id is set.
+# Required when the document's target is not an EC2 instance, e.g.:
+#   aws_ssm_document_parameters:
+#     - "ClusterName=my-eks-cluster"
+aws_ssm_document_parameters: []
 
 # --- AWS SSM maintenance window ---
 # Bring-your-own: ID of the pre-existing maintenance window to target.

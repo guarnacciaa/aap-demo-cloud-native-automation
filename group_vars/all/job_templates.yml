@@ -62,7 +62,13 @@ controller_templates:
     ask_variables_on_launch: true
     extra_vars:
       aws_ssm_document_name: "{{ aws_ssm_document_name }}"
+      # Both optional — see the comment in demo_variables.yml.example. Only
+      # aws_ssm_target_instance_id is set for documents that target an
+      # SSM-managed instance; aws_ssm_document_parameters carries the real
+      # parameters for documents that call AWS APIs directly instead (for
+      # example against an EKS cluster).
       aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id }}"
+      aws_ssm_document_parameters: "{{ aws_ssm_document_parameters }}"
       aws_region: "{{ aws_region }}"
     labels:
       - "{{ demo_label_name }}"
@@ -79,7 +85,10 @@ controller_templates:
     extra_vars:
       aws_region: "{{ aws_region }}"
       aws_ssm_document_name: "{{ aws_ssm_document_name }}"
+      # See the comment on AWS - Run SSM document and collect output above:
+      # both are optional and mutually complementary.
       aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id }}"
+      aws_ssm_document_parameters: "{{ aws_ssm_document_parameters }}"
       aws_ssm_maintenance_window_id: "{{ aws_ssm_maintenance_window_id }}"
       aws_ssm_maintenance_task_name: "{{ aws_ssm_maintenance_task_name }}"
       aws_ssm_service_role_arn: "{{ aws_ssm_service_role_arn }}"
@@ -183,6 +192,7 @@ controller_templates:
       aws_region: "{{ aws_region }}"
       aws_ssm_document_name: "{{ aws_ssm_document_name }}"
       aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id }}"
+      aws_ssm_document_parameters: "{{ aws_ssm_document_parameters }}"
       aws_ssm_maintenance_window_id: "{{ aws_ssm_maintenance_window_id }}"
       demo_aws_maintenance_window_name: "{{ demo_aws_maintenance_window_name }}"
     labels:
