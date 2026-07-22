@@ -14,7 +14,12 @@
   vars:
     aws_region: "{{ aws_region | default('us-east-1') }}"
     aws_ssm_document_name: "{{ aws_ssm_document_name | mandatory }}"
-    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | default('') }}"
+    # `trim` matters here: a stray leading/trailing space (e.g. left over in
+    # a job template extra_vars field or a Survey answer) makes `length > 0`
+    # true so InstanceId is NOT omitted from the parameters, but the
+    # whitespace is silently swallowed by ansible.builtin.command's
+    # shell-like argument splitting, sending AWS an empty parameter value.
+    aws_ssm_target_instance_id: "{{ (aws_ssm_target_instance_id | default('')) | trim }}"
     aws_ssm_document_parameters: "{{ aws_ssm_document_parameters | default([]) }}"
 
   environment:

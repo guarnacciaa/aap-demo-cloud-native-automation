@@ -16,7 +16,13 @@
     aws_ssm_document_name: "{{ aws_ssm_document_name | mandatory }}"
     aws_ssm_maintenance_window_id: "{{ aws_ssm_maintenance_window_id | mandatory }}"
     aws_ssm_maintenance_task_name: "{{ aws_ssm_maintenance_task_name | mandatory }}"
-    aws_ssm_target_instance_id: "{{ aws_ssm_target_instance_id | default('') }}"
+    # `trim` matters here: a stray leading/trailing space (e.g. left over in
+    # a job template extra_vars field or a Survey answer) makes `length > 0`
+    # true so Targets is NOT omitted, but the whitespace is then silently
+    # swallowed by ansible.builtin.command's shell-like argument splitting,
+    # sending AWS an empty Values[0] and failing with "Invalid length for
+    # parameter ... value: 0".
+    aws_ssm_target_instance_id: "{{ (aws_ssm_target_instance_id | default('')) | trim }}"
     aws_ssm_document_parameters: "{{ aws_ssm_document_parameters | default([]) }}"
 
   environment:
