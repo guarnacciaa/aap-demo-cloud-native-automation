@@ -49,10 +49,21 @@
       ansible.builtin.assert:
         that:
           - ssm_document_check.rc == 0
+        # describe-document fails identically (rc != 0) on "document not
+        # found", "AccessDenied", and "region not opted-in" — surface the raw
+        # AWS CLI stderr here instead of guessing, so the operator does not
+        # chase a naming/region issue when the real cause is IAM or an
+        # unopted-in region (e.g. eu-south-1, af-south-1, ap-east-1).
         fail_msg: >-
           SSM Automation document {{ aws_ssm_document_name }} was not found in
-          {{ aws_region }}. Run 02_aws_setup.yml, or fix aws_ssm_document_name
-          in demo_variables.yml if targeting a pre-existing document.
+          {{ aws_region }} ({{ ssm_document_check.stderr | default('no stderr captured') }}).
+          Run 02_aws_setup.yml, or fix aws_ssm_document_name in
+          demo_variables.yml if targeting a pre-existing document. If the
+          document is visible in the AWS console, double-check: (1) the
+          console region selector matches aws_region exactly — SSM Automation
+          documents are region-scoped, not global; (2) the console session
+          and the AAP AWS credential are the same AWS account; (3) exact name
+          casing (SSM document names are case-sensitive).
       tags:
         - aws
         - preview
