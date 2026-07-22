@@ -13,6 +13,7 @@
   vars:
     enable_email_notification: "{{ enable_email_notification | default(false) }}"
     smtp_use_tls: "{{ smtp_use_tls | default(true) }}"
+    smtp_validate_certs: "{{ smtp_validate_certs | default(true) }}"
 
   pre_tasks:
     - name: Skip SMTP check when email notification is disabled
@@ -60,6 +61,7 @@
         cmd: >-
           ../../files/smtp_auth_check.py {{ smtp_host }} {{ smtp_port }}
           {{ 'true' if smtp_use_tls | bool else 'false' }}
+          {{ 'true' if smtp_validate_certs | bool else 'false' }}
       environment:
         SMTP_USERNAME: "{{ smtp_username }}"
         SMTP_PASSWORD: "{{ smtp_password }}"

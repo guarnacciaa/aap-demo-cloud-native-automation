@@ -258,6 +258,7 @@ Child inventory names carry the artifact suffix (not the bare `Azure-Resources` 
 | `Network - Connectivity path check (dry run)` reports an endpoint unreachable | Outbound HTTPS blocked by firewall/proxy, or DNS resolution failure from the AAP execution node | Check egress rules for port 443 and DNS resolution before assuming a credentials problem |
 | `Notify - SMTP preflight check (dry run)` fails on port reachability | SMTP host/port blocked by firewall, or wrong port for the provider | Confirm `smtp_host`/`smtp_port` and that egress on that port is allowed |
 | `Notify - SMTP preflight check (dry run)` fails on authentication | Wrong `smtp_username`/`vault_smtp_password`, or STARTTLS required but `smtp_use_tls: false` | Verify credentials; most providers require `smtp_use_tls: true` on port 587 |
+| `Notify - SMTP preflight check (dry run)` fails with `CERTIFICATE_VERIFY_FAILED: Hostname mismatch` | The relay's certificate CN/SAN does not match `smtp_host` (common when reaching it through a load balancer or internal DNS alias) | Confirm this is expected (not a misconfigured `smtp_host`); if so, set `smtp_validate_certs: false` — `notify_results.yml`'s actual send path never validates this either, so the precheck is only being brought in line with it |
 
 ## Reset
 

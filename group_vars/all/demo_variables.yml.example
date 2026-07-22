@@ -228,6 +228,15 @@ notification_to: ops@example.com
 # Notify - SMTP preflight check (dry run) job template. Set to false only
 # for a relay that never uses STARTTLS on this port.
 smtp_use_tls: true
+# Used only by the Notify - SMTP preflight check (dry run) job template.
+# notify_results.yml's community.general.mail module never validates the
+# server certificate on STARTTLS (a Python smtplib default outside this
+# module's control), so this only affects the precheck. Set to false when
+# the relay's certificate CN/SAN does not match smtp_host (common on
+# corporate relays reached through a load balancer or internal DNS alias)
+# to keep the precheck's pass/fail outcome consistent with what the real
+# send in notify_results.yml will actually do.
+smtp_validate_certs: true
 
 # ============================================================================
 # Credential names (must match credentials.yml) [ALWAYS REQUIRED]

@@ -257,6 +257,11 @@ controller_templates:
       smtp_port: "{{ smtp_port }}"
       notification_to: "{{ notification_to }}"
       smtp_use_tls: "{{ smtp_use_tls | default(true) }}"
+      # Only precheck_smtp.yml reads this (see files/smtp_auth_check.py) —
+      # community.general.mail's own STARTTLS call never validates the
+      # certificate regardless of this flag, so it is not needed on
+      # Notify - Email automation results above.
+      smtp_validate_certs: "{{ smtp_validate_certs | default(true) }}"
       demo_no_log: "{{ demo_no_log }}"
     labels:
       - "{{ demo_label_name }}"

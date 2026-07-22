@@ -14,13 +14,17 @@ import sys
 
 
 def main():
-    if len(sys.argv) != 4:
-        print("Usage: smtp_auth_check.py <host> <port> <use_tls: true|false>")
+    if len(sys.argv) != 5:
+        print(
+            "Usage: smtp_auth_check.py <host> <port> <use_tls: true|false> "
+            "<validate_certs: true|false>"
+        )
         sys.exit(2)
 
     host = sys.argv[1]
     port = int(sys.argv[2])
     use_tls = sys.argv[3].lower() == "true"
+    validate_certs = sys.argv[4].lower() == "true"
     username = os.environ.get("SMTP_USERNAME", "")
     password = os.environ.get("SMTP_PASSWORD", "")
 
@@ -28,7 +32,19 @@ def main():
         server = smtplib.SMTP(host, port, timeout=10)
         server.ehlo()
         if use_tls:
-            server.starttls(context=ssl.create_default_context())
+            tls_context = ssl.create_default_context()
+            if not validate_certs:
+                # Mirrors community.general.mail's actual behavior: its
+                # smtp.starttls() call passes no context, so Python's
+                # smtplib falls back to a context that skips hostname/CA
+                # verification. Some corporate relays are reached through
+                # a hostname (load balancer, internal alias) that never
+                # matches the certificate's CN/SAN; without this escape
+                # hatch this precheck would fail even when the real send
+                # in notify_results.yml would succeed.
+                tls_context.check_hostname = False
+                tls_context.verify_mode = ssl.CERT_NONE
+            server.starttls(context=tls_context)
             server.ehlo()
         if username:
             server.login(username, password)
