@@ -54,8 +54,11 @@
       # passed via environment variables, never argv, so they never appear
       # in the process list or Ansible task output.
       ansible.builtin.script:
+        # cmd is resolved relative to this playbook's own directory
+        # (playbooks/demo/), not the artifact root, so the helper under the
+        # top-level files/ directory needs the explicit ../../ prefix.
         cmd: >-
-          files/smtp_auth_check.py {{ smtp_host }} {{ smtp_port }}
+          ../../files/smtp_auth_check.py {{ smtp_host }} {{ smtp_port }}
           {{ 'true' if smtp_use_tls | bool else 'false' }}
       environment:
         SMTP_USERNAME: "{{ smtp_username }}"
