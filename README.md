@@ -133,7 +133,7 @@ group_vars/all/
   organizations.yml, credentials.yml, inventories.yml, projects.yml
   execution_environments.yml, labels.yml
   credential_types.yml    Custom "SMTP Credentials" type (injects smtp_username/smtp_password)
-  groups.yml, hosts.yml    Azure/AWS groups and hosts inside Demo-Multicloud (see below)
+  groups.yml, hosts.yml    Azure/AWS groups and hosts inside Demo-CloudNativeAutomation (see below)
   job_templates.yml, workflow_templates.yml           Always-deployed objects
   job_templates_infra.yml, workflow_templates_infra.yml   Lab/dev-only provisioning/teardown objects
 context/
@@ -228,7 +228,7 @@ Document both constraints to customers reviewing support implications.
 ## Multicloud inventory structure
 
 ```
-Demo-Multicloud
+Demo-CloudNativeAutomation
   Azure-Resources
     azure_automation  (group)
       azure-automation-anchor

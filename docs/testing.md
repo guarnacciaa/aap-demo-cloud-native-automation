@@ -26,7 +26,7 @@ Tracks testing progress for this demo. Update after each session. For procedural
 |---|---|---|---|
 | Azure-Resources (source) | Not tested | — | |
 | AWS-Resources (source) | Not tested | — | |
-| Demo-Multicloud (parent) | Not tested | — | |
+| Demo-CloudNativeAutomation (parent) | Not tested | — | |
 
 ### Setup playbooks (local run)
 

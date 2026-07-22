@@ -67,11 +67,11 @@ aap_validate_certs: false
 aap_controller_api_prefix: /api/controller/v2
 
 # --- AAP object names --- [ALWAYS REQUIRED]
-demo_organization_name: Multicloud Demo
+demo_organization_name: Cloud Native Automation Demo
 demo_organization_description: Azure Runbook and AWS SSM automation PoC
 demo_project_name: Cloud Native Automation Demo
 demo_label_name: cloud-native-automation
-demo_inventory_name: Demo-Multicloud
+demo_inventory_name: Demo-CloudNativeAutomation
 demo_execution_environment_name: ee-cloud-native-automation
 
 # Full image reference after building and pushing to Private Automation Hub.
