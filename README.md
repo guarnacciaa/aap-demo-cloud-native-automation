@@ -229,13 +229,16 @@ Document both constraints to customers reviewing support implications.
 
 ```
 Demo-CloudNativeAutomation
-  Azure-Resources
+  Azure-Resources-CloudNativeAutomation
     azure_automation  (group)
       azure-automation-anchor
-  AWS-Resources
+  AWS-Resources-CloudNativeAutomation
     aws_automation    (group)
       <ec2-instance-id>
 ```
+
+Child inventory names carry the artifact suffix (not the bare `Azure-Resources` /
+`AWS-Resources` shape) so they stay unique across every artifact deployed to the same AAP.
 
 ## Troubleshooting
 

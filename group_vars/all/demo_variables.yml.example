@@ -72,6 +72,14 @@ demo_organization_description: Azure Runbook and AWS SSM automation PoC
 demo_project_name: Cloud Native Automation Demo
 demo_label_name: cloud-native-automation
 demo_inventory_name: Demo-CloudNativeAutomation
+# Child inventory names — must be unique across artifacts, not the bare
+# "Azure-Resources"/"AWS-Resources" shape. ansible.controller.host and
+# ansible.controller.group resolve their inventory: parameter by name only,
+# with no organization filter (module.resolve_name_to_id), so a same-named
+# inventory in another artifact's Organization makes aap_config.yml fail with
+# "returned 2 items, expected 1". See artifact--demo-variables.mdc.
+demo_azure_inventory_name: Azure-Resources-CloudNativeAutomation
+demo_aws_inventory_name: AWS-Resources-CloudNativeAutomation
 demo_execution_environment_name: ee-cloud-native-automation
 
 # Full image reference after building and pushing to Private Automation Hub.
@@ -224,9 +232,15 @@ smtp_use_tls: true
 # ============================================================================
 # Credential names (must match credentials.yml) [ALWAYS REQUIRED]
 # ============================================================================
+# Must be unique across artifacts, not a generic placeholder like "Azure
+# Service Principal": job_template's credentials: list resolves each name via
+# a name-only Controller API lookup with no organization filter
+# (module.resolve_name_to_id), so a same-named credential in another
+# artifact's Organization makes aap_config.yml fail with
+# "returned 2 items, expected 1". See artifact--demo-variables.mdc.
 
-azure_credential_name: Azure Service Principal
-aws_credential_name: AWS IAM User
+azure_credential_name: Azure Service Principal - Cloud Native Automation
+aws_credential_name: AWS IAM User - Cloud Native Automation
 # Custom "SMTP Credentials" credential type (see credential_types.yml) that
 # injects smtp_username/smtp_password as extra_vars at run time, so the
 # password is never stored in plaintext on the Notify job templates.

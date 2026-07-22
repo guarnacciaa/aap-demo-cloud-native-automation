@@ -90,13 +90,17 @@
       tags:
         - templates
 
-    # --- 3. Inventories ---
+    # --- 3. Inventories (child inventories before parent) ---
     - name: Remove inventories
       ansible.controller.inventory:
-        name: "{{ demo_inventory_name }}"
+        name: "{{ item }}"
         organization: "{{ demo_organization_name }}"
         state: absent
         <<: *controller_auth
+      loop:
+        - "{{ demo_azure_inventory_name }}"
+        - "{{ demo_aws_inventory_name }}"
+        - "{{ demo_inventory_name }}"
       ignore_errors: true
       tags:
         - inventories

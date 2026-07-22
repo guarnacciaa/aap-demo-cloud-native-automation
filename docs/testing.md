@@ -24,8 +24,8 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 | Component | Status | Last tested | Notes |
 |---|---|---|---|
-| Azure-Resources (source) | Not tested | — | |
-| AWS-Resources (source) | Not tested | — | |
+| Azure-Resources-CloudNativeAutomation (source) | Not tested | — | |
+| AWS-Resources-CloudNativeAutomation (source) | Not tested | — | |
 | Demo-CloudNativeAutomation (parent) | Not tested | — | |
 
 ### Setup playbooks (local run)
