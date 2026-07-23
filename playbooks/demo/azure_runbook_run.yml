@@ -123,6 +123,82 @@
         - azure
         - run
 
+    # The job status alone does not explain WHY a runbook failed — the actual
+    # PowerShell exception only lives in the job's Error stream. Fetching it
+    # here, before the assert, means the failure reason is visible directly in
+    # the AAP job output instead of requiring a trip to the Azure portal.
+    - name: List Azure Automation job streams for diagnostics
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobs/{{ azure_job_name }}/streams?api-version={{ azure_arm_api_version }}
+        method: GET
+        headers:
+          Authorization: "Bearer {{ azure_access_token }}"
+        status_code: 200
+      register: azure_job_streams
+      changed_when: false
+      tags:
+        - azure
+        - diagnostics
+
+    - name: Identify error stream IDs when the job did not complete cleanly
+      ansible.builtin.set_fact:
+        azure_error_stream_ids: >-
+          {{
+            azure_job_streams.json.value
+            | selectattr('properties.streamType', 'equalto', 'Error')
+            | map(attribute='properties.jobStreamId')
+            | list
+          }}
+      tags:
+        - azure
+        - diagnostics
+
+    # The streams list endpoint only returns metadata (stream type, timestamp);
+    # the actual exception text requires a Get call per stream ID.
+    - name: Fetch the text of each error stream
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/jobs/{{ azure_job_name }}/streams/{{ item }}?api-version={{ azure_arm_api_version }}
+        method: GET
+        headers:
+          Authorization: "Bearer {{ azure_access_token }}"
+        status_code: 200
+      register: azure_error_stream_details
+      loop: "{{ azure_error_stream_ids }}"
+      changed_when: false
+      when: azure_error_stream_ids | length > 0
+      tags:
+        - azure
+        - diagnostics
+
+    - name: Combine error stream text into a single diagnostic string
+      ansible.builtin.set_fact:
+        azure_error_stream_text: >-
+          {{
+            azure_error_stream_details.results
+            | default([])
+            | selectattr('json', 'defined')
+            | map(attribute='json.properties.streamText')
+            | list
+            | join('\n')
+          }}
+      tags:
+        - azure
+        - diagnostics
+
+    # Published before the assert (which is fatal on failure) so a failed run
+    # still leaves the error text available to workflow/email nodes downstream.
+    - name: Publish Azure runbook diagnostics before the final status check
+      ansible.builtin.set_stats:
+        data:
+          azure_runbook_job_name: "{{ azure_job_name }}"
+          azure_runbook_status: "{{ azure_job_status.json.properties.status }}"
+          azure_runbook_error_details: "{{ azure_error_stream_text }}"
+      tags:
+        - azure
+        - diagnostics
+
     - name: Assert Azure Automation job completed successfully
       ansible.builtin.assert:
         that:
@@ -130,6 +206,7 @@
         fail_msg: >-
           Runbook job {{ azure_job_name }} finished with status
           {{ azure_job_status.json.properties.status }}.
+          {{ ('Error stream: ' + azure_error_stream_text) if azure_error_stream_text | length > 0 else 'No error stream content was returned by Azure for this job.' }}
       tags:
         - azure
         - run

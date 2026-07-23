@@ -50,10 +50,14 @@ def main():
             server.login(username, password)
         server.quit()
     except Exception as exc:  # noqa: BLE001 - report any failure to the operator
-        print(f"SMTP authentication failed for {username}@{host}:{port} - {exc}")
+        # username often already contains its own "@domain" (a mailbox-style
+        # account name), so "{username}@{host}" would read as a single
+        # malformed address with two "@" signs. " via " keeps the two
+        # pieces of information visually distinct.
+        print(f"SMTP authentication failed for {username} via {host}:{port} - {exc}")
         sys.exit(1)
 
-    print(f"SMTP authentication succeeded for {username}@{host}:{port} (STARTTLS: {use_tls})")
+    print(f"SMTP authentication succeeded for {username} via {host}:{port} (STARTTLS: {use_tls})")
 
 
 if __name__ == "__main__":

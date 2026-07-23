@@ -20,14 +20,41 @@
       tags:
         - notify
 
+    # Each cloud step only runs its own set_stats when it actually executes in
+    # the workflow, so status/error facts may be entirely absent here (e.g. a
+    # workflow that only exercises AWS). 'not run' distinguishes that case from
+    # a real failure so the email body and subject never claim a false success.
+    - name: Normalize per-cloud status facts published upstream in the workflow
+      ansible.builtin.set_fact:
+        azure_runbook_status: "{{ azure_runbook_status | default('not run') }}"
+        aws_ssm_status: "{{ aws_ssm_status | default('not run') }}"
+      tags:
+        - notify
+
+    - name: Determine overall automation outcome for the subject line
+      ansible.builtin.set_fact:
+        automation_overall_success: >-
+          {{
+            (azure_runbook_status in ['Completed', 'not run'])
+            and (aws_ssm_status in ['Success', 'not run'])
+          }}
+      tags:
+        - notify
+
     - name: Build notification body from workflow stats when available
       ansible.builtin.set_fact:
         notification_body: |
           Automation PoC results
           ----------------------
+          Azure runbook status: {{ azure_runbook_status }}
           Azure runbook output:
           {{ azure_runbook_output | default('N/A') }}
+          {% if azure_runbook_error_details | default('') | length > 0 %}
+          Azure runbook error details:
+          {{ azure_runbook_error_details }}
+          {% endif %}
 
+          AWS SSM status: {{ aws_ssm_status }}
           AWS SSM outputs:
           {{ aws_ssm_outputs | default({}) | to_nice_json }}
       tags:
@@ -40,7 +67,9 @@
         username: "{{ smtp_username }}"
         password: "{{ smtp_password }}"
         to: "{{ notification_to }}"
-        subject: "AAP multicloud automation results"
+        subject: >-
+          AAP multicloud automation results —
+          {{ 'SUCCESS' if automation_overall_success else 'FAILURE' }}
         body: "{{ notification_body }}"
         secure: "{{ 'starttls' if (smtp_use_tls | default(true) | bool) else 'never' }}"
       no_log: "{{ demo_no_log | default(false) }}"
