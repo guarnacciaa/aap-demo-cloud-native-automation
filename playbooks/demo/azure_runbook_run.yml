@@ -24,8 +24,9 @@
     # parameter names for them (properties.parameters is always {} for
     # runbookType Python2/Python3 — Python runbooks only take positional
     # sys.argv input, never named parameters). The resolution block below
-    # detects this and builds literal "[PARAMETER N]" keys instead — see the
-    # comment on "Detect whether the target runbook is a Python runbook".
+    # detects this and builds placeholder keys instead (order, not key
+    # text, is what maps to sys.argv position) — see the comment on
+    # "Extract parameter names ordered by their declared position".
     azure_runbook_parameters: "{{ azure_runbook_parameters | default({}) }}"
     azure_runbook_parameter_values: "{{ azure_runbook_parameter_values | default([]) }}"
 
@@ -133,10 +134,16 @@
         - azure
         - run
 
-    # Python runbooks: build literal "[PARAMETER N]" keys (1-indexed, matching
-    # sys.argv[1]..sys.argv[N]) since there are no declared names to resolve —
-    # this is the exact key format Microsoft's own official REST sample uses:
-    # https://github.com/azureautomation/runbooks/blob/master/Utility/Python/sample_rest_call.py
+    # Python runbooks: build placeholder keys (1-indexed, matching
+    # sys.argv[1]..sys.argv[N]) since there are no declared names to resolve.
+    # The literal key text does not matter to Azure — only the dict's
+    # iteration ORDER maps to sys.argv position (confirmed against
+    # Start-AzAutomationRunbook's own docs, which use arbitrary key names
+    # like "Key1"/"Key2" for the same purpose). A previous attempt at
+    # literal "[PARAMETER N]" keys (matching an old Microsoft REST sample)
+    # was live-tested and the brackets caused Azure to silently drop every
+    # parameter (properties.parameters came back {} on the created job) —
+    # plain alphanumeric keys do not have that problem.
     # All other runbook types (PowerShell, PowerShell Workflow, Graphical):
     # resolve the real declared names via their position, as before.
     - name: Extract parameter names ordered by their declared position
@@ -144,7 +151,7 @@
         azure_runbook_parameter_names: >-
           {{
             (range(1, azure_runbook_parameter_values | length + 1)
-             | map('string') | map('regex_replace', '(.+)', '[PARAMETER \1]') | list)
+             | map('string') | map('regex_replace', '(.+)', 'param\1') | list)
             if (azure_runbook_is_python | default(false))
             else (
               azure_runbook_definition.json.properties.parameters

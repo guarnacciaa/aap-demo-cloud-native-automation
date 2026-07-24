@@ -154,9 +154,10 @@
 
     # See azure_runbook_run.yml for the full rationale: Python runbooks never
     # declare parameters via the ARM API (properties.parameters is always
-    # {}), so they need literal "[PARAMETER N]" keys instead of a real-name
-    # lookup. Applied here by analogy — the jobSchedules parameters field
-    # uses the same IDictionary<string,string> shape as the jobs API, but
+    # {}), so they need placeholder keys instead of a real-name lookup —
+    # only the dict's iteration order maps to sys.argv position, the key
+    # text itself is irrelevant to Azure. Applied here by analogy — the
+    # jobSchedules parameters field uses the same shape as the jobs API, but
     # this specific combination (scheduled Python runbook + positional
     # values) has not been verified end-to-end; test before relying on it.
     - name: Detect whether the target runbook is a Python runbook
@@ -172,7 +173,7 @@
         azure_runbook_parameter_names: >-
           {{
             (range(1, azure_runbook_parameter_values | length + 1)
-             | map('string') | map('regex_replace', '(.+)', '[PARAMETER \1]') | list)
+             | map('string') | map('regex_replace', '(.+)', 'param\1') | list)
             if (azure_runbook_is_python | default(false))
             else (
               azure_runbook_definition.json.properties.parameters

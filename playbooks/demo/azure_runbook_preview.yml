@@ -143,8 +143,8 @@
     # Python runbooks (runbookType Python2/Python3) never populate
     # properties.parameters — an empty list here does NOT mean the runbook
     # takes no input, only that Azure does not expose declared names for
-    # Python. See azure_runbook_run.yml for the full rationale and the
-    # "[PARAMETER N]" key format Azure actually expects for these.
+    # Python. See azure_runbook_run.yml for the full rationale: parameters
+    # are positional only, mapped to sys.argv by dict order, not by key text.
     - name: Detect whether the target runbook is a Python runbook
       ansible.builtin.set_fact:
         azure_runbook_is_python: "{{ (runbook_check.json.properties.runbookType | default('')) is match('Python') }}"
@@ -184,7 +184,7 @@
             dict(
               (
                 (range(1, azure_runbook_parameter_values | length + 1)
-                 | map('string') | map('regex_replace', '(.+)', '[PARAMETER \1]') | list)
+                 | map('string') | map('regex_replace', '(.+)', 'param\1') | list)
                 if (azure_runbook_is_python | default(false))
                 else (azure_runbook_declared_parameters | map(attribute='key') | list)
               )
@@ -244,7 +244,7 @@
             {{ azure_recent_runbook_jobs | map(attribute='name') | list | join(', ') if azure_recent_runbook_jobs | length > 0 else 'none found' }}
           - >-
             {{
-              'Python runbook: Azure does not expose declared parameter names for Python (properties.parameters is always empty). Parameters are positional only, read via sys.argv in the script.'
+              'Python runbook: Azure does not expose declared parameter names for Python (properties.parameters is always empty). Parameters are positional only, mapped to sys.argv by dict order — the key text itself is irrelevant.'
               if (azure_runbook_is_python | default(false))
               else (
                 'Declared parameters (' ~ (azure_runbook_declared_parameters | length) ~ '), ordered by position: '

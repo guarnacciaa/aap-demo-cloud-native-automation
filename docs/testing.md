@@ -47,14 +47,14 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | Setup - AWS SSM resources | Pass | 2026-06-25 | Tested via WF - Demo setup |
 | Teardown - Azure runbook | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-25, `failed=0 ok=10` |
 | Teardown - AWS SSM resources | Pass | 2026-06-25 | `failed=0 ok=16 changed=10`; end-to-end pass as AAP job template |
-| Azure - Run Runbook and collect output | Partial | 2026-07-24 | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0`. Further changed 2026-07-23 (Error stream diagnostics) and 2026-07-24 (positional-to-named parameter resolution). Live run against bring-your-own Python runbook `crif-rb-patching-aks` failed (`declares 0 parameter(s)` — Python runbooks never expose declared parameters); fixed same day with `[PARAMETER N]` key resolution for Python — see Open issues. Not yet re-run |
-| Azure - Schedule Runbook | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0`. Further changed 2026-07-24 with the same positional-to-named parameter resolution as Azure - Run Runbook above, plus the same-day Python-runbook `[PARAMETER N]` fix (applied by analogy to the `jobSchedules` API, unverified); not yet run live — see Open issues |
+| Azure - Run Runbook and collect output | Partial | 2026-07-24 | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0`. Further changed 2026-07-23 (Error stream diagnostics) and 2026-07-24 (positional-to-named parameter resolution). Live run against bring-your-own Python runbook `crif-rb-patching-aks` failed twice: first `declares 0 parameter(s)` (Python runbooks never expose declared parameters), then `IndexError` on `sys.argv[1]` after the first fix (bracketed `"[PARAMETER N]"` keys were silently dropped by Azure). Corrected same day to plain `"paramN"` keys — see Open issues. Not yet re-run through the job template with the corrected key format |
+| Azure - Schedule Runbook | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0`. Further changed 2026-07-24 with the same positional-to-named parameter resolution as Azure - Run Runbook above, plus the same-day Python-runbook key fix (applied by analogy to the `jobSchedules` API, unverified); not yet run live — see Open issues |
 | AWS - Run SSM document and collect output | Not tested | — | Logic changed 2026-07-22: aws_ssm_target_instance_id made optional (InstanceId now built via aws_ssm_all_parameters, combined with new aws_ssm_document_parameters); default instance-based path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0` |
 | AWS - Schedule SSM via maintenance window | Not tested | — | Logic changed 2026-07-22: --targets now conditional on aws_ssm_target_instance_id; new --task-invocation-parameters branch for aws_ssm_document_parameters is UNTESTED (AWS CLI shorthand syntax not yet verified against a live document). Last known-good run (pre-change): 2026-06-22, `failed=0 changed=1` |
 | Notify - Email automation results | Not tested | — | Extended 2026-07-23 to include per-cloud status (`azure_runbook_status`, `aws_ssm_status`), Azure error stream details, and a dynamic SUCCESS/FAILURE subject; not yet run live — see Open issues |
 | Azure - Connectivity check (dry run) | Not tested | — | New job template |
 | Azure - Permissions check (dry run) | Not tested | — | New job template |
-| Azure - Runbook preview (dry run) | Not tested | — | New job template. Extended 2026-07-24 to report the runbook's declared parameters (name/type/position/mandatory) and, when `azure_runbook_parameter_values` is set, preview the positional-to-name mapping without starting a job; further extended same day so Python runbooks report the `[PARAMETER N]` mapping instead of a misleading "none declared"; not yet run live — see Open issues |
+| Azure - Runbook preview (dry run) | Not tested | — | New job template. Extended 2026-07-24 to report the runbook's declared parameters (name/type/position/mandatory) and, when `azure_runbook_parameter_values` is set, preview the positional-to-name mapping without starting a job; further extended same day so Python runbooks report the positional mapping instead of a misleading "none declared", then corrected same day from bracketed `"[PARAMETER N]"` placeholder keys to plain `"paramN"` (see Open issues); not yet run live |
 | AWS - Connectivity check (dry run) | Not tested | — | New job template; logic also changed 2026-07-22 to skip the instance check when aws_ssm_target_instance_id is empty |
 | AWS - Permissions check (dry run) | Not tested | — | New job template; requires iam:SimulatePrincipalPolicy on the caller's own ARN |
 | AWS - SSM preview (dry run) | Not tested | — | New job template; logic also changed 2026-07-22 to skip the instance check and report aws_ssm_all_parameters when aws_ssm_target_instance_id is empty |
@@ -74,6 +74,27 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 ## Open issues
 
+- **2026-07-24**: Corrected the Python-runbook parameter key format from the entry directly
+  below (same day). After the `"[PARAMETER N]"` fix landed, a live run against
+  `crif-rb-patching-aks` still failed with `IndexError: list index out of range` on
+  `sys.argv[1]` — no arguments reached the script at all. `az rest GET` on the created job
+  confirmed `properties.parameters: {}` had been persisted, meaning Azure silently dropped
+  every parameter from the `PUT` body rather than storing them. Root cause: the literal
+  square brackets in `"[PARAMETER N]"` keys — not the Python-runbook detection logic itself,
+  which was correct. Confirmed by two facts: (1) Microsoft's own `Start-AzAutomationRunbook`
+  docs show a Python-runbook example using arbitrary key names (`"Key1"`/`"Key2"`) with a
+  plain `[ordered]` hashtable — the key *text* is irrelevant to Azure, only the dict's
+  iteration *order* maps to `sys.argv` position; (2) a manual
+  `az automation runbook start --parameters VMName=... VMName02=... VMName03=... VMName04=...`
+  against the same runbook and account, using plain alphanumeric keys in the correct order,
+  was accepted where the bracketed-key `az rest` equivalent was not. Fixed by changing the
+  placeholder key generation in `azure_runbook_run.yml`, `azure_runbook_schedule.yml`, and
+  `azure_runbook_preview.yml` from `"[PARAMETER \1]"` to `"param\1"` (same 1-indexed order,
+  no special characters). **The corrected key format has not yet been re-verified with a
+  live job launched through the AAP job template** (only the manual `az automation runbook
+  start` CLI test, with different key text, has succeeded so far) — re-run
+  `Azure - Run Runbook and collect output` against `crif-rb-patching-aks` before considering
+  this closed.
 - **2026-07-24**: Found and fixed a Python-runbook gap in the positional-to-named parameter
   resolution added earlier the same day (see the entry directly below). Running
   `Azure - Run Runbook and collect output` against a real bring-your-own Python runbook
