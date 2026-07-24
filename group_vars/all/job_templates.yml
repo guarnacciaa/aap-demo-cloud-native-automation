@@ -25,6 +25,13 @@ controller_templates:
       # reliably auto-loaded for playbooks/demo/*.yml under AAP's generated
       # inventory.
       azure_auth_mode: "{{ azure_auth_mode }}"
+      # Two mutually exclusive ways to pass runbook parameters — see the
+      # comment on both variables in demo_variables.yml.example.
+      # azure_runbook_parameters: explicit {Name: Value} dict (names known).
+      # azure_runbook_parameter_values: ordered list of values only; resolved
+      # to real names at runtime via the runbook's declared parameter position.
+      azure_runbook_parameters: "{{ azure_runbook_parameters }}"
+      azure_runbook_parameter_values: "{{ azure_runbook_parameter_values }}"
     labels:
       - "{{ demo_label_name }}"
 
@@ -48,6 +55,10 @@ controller_templates:
       # See the comment on Azure - Run Runbook and collect output above: this
       # playbook also branches on azure_auth_mode and must receive it via extra_vars.
       azure_auth_mode: "{{ azure_auth_mode }}"
+      # See the comment on Azure - Run Runbook and collect output above: same
+      # two mutually exclusive parameter-passing modes apply to the scheduled job.
+      azure_runbook_parameters: "{{ azure_runbook_parameters }}"
+      azure_runbook_parameter_values: "{{ azure_runbook_parameter_values }}"
     labels:
       - "{{ demo_label_name }}"
 
@@ -161,6 +172,9 @@ controller_templates:
       azure_automation_account: "{{ azure_automation_account }}"
       azure_runbook_name: "{{ azure_runbook_name }}"
       azure_auth_mode: "{{ azure_auth_mode }}"
+      # Optional: preview the position-to-name mapping before running the
+      # real job template — see the comment on Azure - Run Runbook above.
+      azure_runbook_parameter_values: "{{ azure_runbook_parameter_values }}"
     labels:
       - "{{ demo_label_name }}"
 

@@ -205,6 +205,26 @@ azure_automation_account: CHANGE_ME
 # Create-from-scratch: created by playbooks/setup/01_azure_setup.yml.
 azure_runbook_name: aap-demo-runbook
 
+# Runbook input parameters — Azure Automation's Job API always requires a
+# name-keyed dictionary, never a positional array. Use exactly ONE of:
+#   azure_runbook_parameters: explicit {Name: Value} dict, when the exact
+#     parameter names declared in the runbook's param() block are known.
+#   azure_runbook_parameter_values: ordered list of values only, when the
+#     customer supplied values without names (e.g. copied from the Azure
+#     portal's job parameters view). azure_runbook_run.yml and
+#     azure_runbook_schedule.yml resolve these to the real names at runtime
+#     via the runbook's own declared parameter position — see
+#     Azure - Runbook preview (dry run) to verify the mapping beforehand.
+# Example (do not uncomment both at once):
+#   azure_runbook_parameters:
+#     ScheduleName: CHANGE_ME
+#     Environment: CHANGE_ME
+#   azure_runbook_parameter_values:
+#     - CHANGE_ME
+#     - CHANGE_ME
+azure_runbook_parameters: {}
+azure_runbook_parameter_values: []
+
 # --- Azure runbook schedule ---
 azure_job_schedule_name: poc-runbook-schedule
 # ISO 8601 UTC timestamp for the first scheduled execution.

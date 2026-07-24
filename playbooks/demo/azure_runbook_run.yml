@@ -13,6 +13,15 @@
     azure_runbook_name: "{{ azure_runbook_name | mandatory }}"
     azure_arm_api_version: "2024-10-23"
     azure_job_name: "aap-{{ azure_runbook_name }}-{{ ansible_date_time.epoch }}"
+    # Two mutually exclusive ways to pass runbook parameters (Azure's Job API
+    # always requires a name-keyed dictionary, never a positional array):
+    #   azure_runbook_parameters: explicit {Name: Value} dict — use when the
+    #     exact parameter names are known.
+    #   azure_runbook_parameter_values: ordered list of values only — use when
+    #     the customer supplied values without names; resolved to real names
+    #     below via the runbook's own declared parameter position.
+    azure_runbook_parameters: "{{ azure_runbook_parameters | default({}) }}"
+    azure_runbook_parameter_values: "{{ azure_runbook_parameter_values | default([]) }}"
 
   pre_tasks:
     - name: Resolve Azure credentials from AAP credential injection or Ansible variables
@@ -86,6 +95,71 @@
         - azure
         - auth
 
+    # Azure Automation's Job API always requires parameters as a name-keyed
+    # dictionary — see the note on azure_runbook_parameter_values above. When
+    # only positional values were supplied, resolve the runbook's own
+    # definition (which exposes each parameter's zero-based `position`) to
+    # recover the real names and build the dictionary the API expects.
+    - name: Retrieve runbook definition to resolve positional parameter names
+      ansible.builtin.uri:
+        url: >-
+          https://management.azure.com/subscriptions/{{ azure_subscription_id }}/resourceGroups/{{ azure_automation_resource_group }}/providers/Microsoft.Automation/automationAccounts/{{ azure_automation_account }}/runbooks/{{ azure_runbook_name }}?api-version={{ azure_arm_api_version }}
+        method: GET
+        headers:
+          Authorization: "Bearer {{ azure_access_token }}"
+        status_code: 200
+      register: azure_runbook_definition
+      when: azure_runbook_parameter_values | length > 0
+      tags:
+        - azure
+        - run
+
+    - name: Extract parameter names ordered by their declared position
+      ansible.builtin.set_fact:
+        azure_runbook_parameter_names: >-
+          {{
+            azure_runbook_definition.json.properties.parameters
+            | default({})
+            | dict2items
+            | sort(attribute='value.position')
+            | map(attribute='key')
+            | list
+          }}
+      when: azure_runbook_parameter_values | length > 0
+      tags:
+        - azure
+        - run
+
+    # A silent length mismatch would otherwise zip() values to the wrong
+    # names (or silently drop extras) instead of failing loudly before the
+    # job is started against the customer's Automation Account.
+    - name: Validate positional value count matches the runbook's declared parameters
+      ansible.builtin.assert:
+        that:
+          - azure_runbook_parameter_values | length == azure_runbook_parameter_names | length
+        fail_msg: >-
+          azure_runbook_parameter_values supplies {{ azure_runbook_parameter_values | length }}
+          value(s), but runbook {{ azure_runbook_name }} declares
+          {{ azure_runbook_parameter_names | length }} parameter(s):
+          {{ azure_runbook_parameter_names | join(', ') }}. Fix the list order/count,
+          or use azure_runbook_parameters with explicit names instead.
+      when: azure_runbook_parameter_values | length > 0
+      tags:
+        - azure
+        - run
+
+    - name: Build the named parameters dictionary from positional values
+      ansible.builtin.set_fact:
+        azure_runbook_parameters: "{{ dict(azure_runbook_parameter_names | zip(azure_runbook_parameter_values)) }}"
+      when: azure_runbook_parameter_values | length > 0
+      no_log: "{{ demo_no_log | default(false) }}"
+      tags:
+        - azure
+        - run
+
+    # Runbook parameter values (e.g. email addresses, environment identifiers)
+    # can carry customer-sensitive data, so this task respects demo_no_log the
+    # same way the credential-handling tasks above do.
     - name: Start Azure Automation runbook job
       ansible.builtin.uri:
         url: >-
@@ -99,10 +173,12 @@
           properties:
             runbook:
               name: "{{ azure_runbook_name }}"
+            parameters: "{{ azure_runbook_parameters | default({}) }}"
         status_code:
           - 200
           - 201
       register: azure_job_create
+      no_log: "{{ demo_no_log | default(false) }}"
       tags:
         - azure
         - run
