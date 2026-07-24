@@ -152,16 +152,36 @@
         - azure
         - schedule
 
+    # See azure_runbook_run.yml for the full rationale: Python runbooks never
+    # declare parameters via the ARM API (properties.parameters is always
+    # {}), so they need literal "[PARAMETER N]" keys instead of a real-name
+    # lookup. Applied here by analogy — the jobSchedules parameters field
+    # uses the same IDictionary<string,string> shape as the jobs API, but
+    # this specific combination (scheduled Python runbook + positional
+    # values) has not been verified end-to-end; test before relying on it.
+    - name: Detect whether the target runbook is a Python runbook
+      ansible.builtin.set_fact:
+        azure_runbook_is_python: "{{ (azure_runbook_definition.json.properties.runbookType | default('')) is match('Python') }}"
+      when: azure_runbook_parameter_values | length > 0
+      tags:
+        - azure
+        - schedule
+
     - name: Extract parameter names ordered by their declared position
       ansible.builtin.set_fact:
         azure_runbook_parameter_names: >-
           {{
-            azure_runbook_definition.json.properties.parameters
-            | default({})
-            | dict2items
-            | sort(attribute='value.position')
-            | map(attribute='key')
-            | list
+            (range(1, azure_runbook_parameter_values | length + 1)
+             | map('string') | map('regex_replace', '(.+)', '[PARAMETER \1]') | list)
+            if (azure_runbook_is_python | default(false))
+            else (
+              azure_runbook_definition.json.properties.parameters
+              | default({})
+              | dict2items
+              | sort(attribute='value.position')
+              | map(attribute='key')
+              | list
+            )
           }}
       when: azure_runbook_parameter_values | length > 0
       tags:

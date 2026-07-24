@@ -140,6 +140,18 @@
         - azure
         - preview
 
+    # Python runbooks (runbookType Python2/Python3) never populate
+    # properties.parameters — an empty list here does NOT mean the runbook
+    # takes no input, only that Azure does not expose declared names for
+    # Python. See azure_runbook_run.yml for the full rationale and the
+    # "[PARAMETER N]" key format Azure actually expects for these.
+    - name: Detect whether the target runbook is a Python runbook
+      ansible.builtin.set_fact:
+        azure_runbook_is_python: "{{ (runbook_check.json.properties.runbookType | default('')) is match('Python') }}"
+      tags:
+        - azure
+        - preview
+
     # Only relevant when the operator supplied azure_runbook_parameter_values
     # to check the name mapping before running the real job template — this
     # playbook never starts a job, so a mismatch here is safe to surface as a
@@ -170,12 +182,21 @@
         azure_runbook_resolved_parameters: >-
           {{
             dict(
-              (azure_runbook_declared_parameters | map(attribute='key') | list)
+              (
+                (range(1, azure_runbook_parameter_values | length + 1)
+                 | map('string') | map('regex_replace', '(.+)', '[PARAMETER \1]') | list)
+                if (azure_runbook_is_python | default(false))
+                else (azure_runbook_declared_parameters | map(attribute='key') | list)
+              )
               | zip(azure_runbook_parameter_values)
             )
           }}
         azure_runbook_parameter_count_matches: >-
-          {{ azure_runbook_parameter_values | length == azure_runbook_declared_parameters | length }}
+          {{
+            true
+            if (azure_runbook_is_python | default(false))
+            else (azure_runbook_parameter_values | length == azure_runbook_declared_parameters | length)
+          }}
       when: azure_runbook_parameter_values | length > 0
       no_log: "{{ demo_no_log | default(false) }}"
       tags:
@@ -222,8 +243,14 @@
             Recent jobs for this runbook ({{ azure_recent_runbook_jobs | length }}):
             {{ azure_recent_runbook_jobs | map(attribute='name') | list | join(', ') if azure_recent_runbook_jobs | length > 0 else 'none found' }}
           - >-
-            Declared parameters ({{ azure_runbook_declared_parameters | length }}), ordered by position:
-            {{ azure_runbook_parameter_summary if azure_runbook_declared_parameters | length > 0 else 'none declared' }}
+            {{
+              'Python runbook: Azure does not expose declared parameter names for Python (properties.parameters is always empty). Parameters are positional only, read via sys.argv in the script.'
+              if (azure_runbook_is_python | default(false))
+              else (
+                'Declared parameters (' ~ (azure_runbook_declared_parameters | length) ~ '), ordered by position: '
+                ~ (azure_runbook_parameter_summary if azure_runbook_declared_parameters | length > 0 else 'none declared')
+              )
+            }}
           - >-
             {{ ('Positional mapping from azure_runbook_parameter_values: ' + (azure_runbook_resolved_parameters | to_nice_json) +
                (' (WARNING: value count does not match declared parameter count)' if not (azure_runbook_parameter_count_matches | default(true)) else ''))

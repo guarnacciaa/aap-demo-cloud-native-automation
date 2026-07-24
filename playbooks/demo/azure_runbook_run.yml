@@ -20,6 +20,12 @@
     #   azure_runbook_parameter_values: ordered list of values only — use when
     #     the customer supplied values without names; resolved to real names
     #     below via the runbook's own declared parameter position.
+    # Python runbooks are a special case: Azure never exposes declared
+    # parameter names for them (properties.parameters is always {} for
+    # runbookType Python2/Python3 — Python runbooks only take positional
+    # sys.argv input, never named parameters). The resolution block below
+    # detects this and builds literal "[PARAMETER N]" keys instead — see the
+    # comment on "Detect whether the target runbook is a Python runbook".
     azure_runbook_parameters: "{{ azure_runbook_parameters | default({}) }}"
     azure_runbook_parameter_values: "{{ azure_runbook_parameter_values | default([]) }}"
 
@@ -114,16 +120,40 @@
         - azure
         - run
 
+    - name: Detect whether the target runbook is a Python runbook
+      # Python runbooks (runbookType Python2/Python3) never declare named
+      # parameters — the ARM API always returns properties.parameters: {}
+      # for them, regardless of how many sys.argv values the script expects.
+      # This is a documented Azure limitation, not something this playbook
+      # can work around by querying harder.
+      ansible.builtin.set_fact:
+        azure_runbook_is_python: "{{ (azure_runbook_definition.json.properties.runbookType | default('')) is match('Python') }}"
+      when: azure_runbook_parameter_values | length > 0
+      tags:
+        - azure
+        - run
+
+    # Python runbooks: build literal "[PARAMETER N]" keys (1-indexed, matching
+    # sys.argv[1]..sys.argv[N]) since there are no declared names to resolve —
+    # this is the exact key format Microsoft's own official REST sample uses:
+    # https://github.com/azureautomation/runbooks/blob/master/Utility/Python/sample_rest_call.py
+    # All other runbook types (PowerShell, PowerShell Workflow, Graphical):
+    # resolve the real declared names via their position, as before.
     - name: Extract parameter names ordered by their declared position
       ansible.builtin.set_fact:
         azure_runbook_parameter_names: >-
           {{
-            azure_runbook_definition.json.properties.parameters
-            | default({})
-            | dict2items
-            | sort(attribute='value.position')
-            | map(attribute='key')
-            | list
+            (range(1, azure_runbook_parameter_values | length + 1)
+             | map('string') | map('regex_replace', '(.+)', '[PARAMETER \1]') | list)
+            if (azure_runbook_is_python | default(false))
+            else (
+              azure_runbook_definition.json.properties.parameters
+              | default({})
+              | dict2items
+              | sort(attribute='value.position')
+              | map(attribute='key')
+              | list
+            )
           }}
       when: azure_runbook_parameter_values | length > 0
       tags:
