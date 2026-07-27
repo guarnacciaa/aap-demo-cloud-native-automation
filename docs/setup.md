@@ -17,6 +17,7 @@ The flag is read in `playbooks/aap_config.yml`: when `true`, the objects defined
 
 - `[ALWAYS REQUIRED]` — needed regardless of mode: AAP connection, object names, Git repo, credential names, the AWS SSM identity variables (`aws_region`, `aws_ssm_document_name`, `aws_ssm_maintenance_window_id`, `aws_ssm_maintenance_task_name`, `aws_ssm_service_role_arn`, `aws_account_id`), the Azure Automation identity variables (`azure_subscription_id`, `azure_tenant_id`, `azure_automation_resource_group`, `azure_automation_account`, `azure_runbook_name`, `azure_job_schedule_name` and the schedule timing variables) — the scenario job templates authenticate against and target these objects in both modes. `vault_azure_client_id`/`vault_azure_client_secret` are further conditional on a second, independent axis: `azure_auth_mode` (see [Azure authentication mode](#azure-authentication-mode-service-principal-vs-managed-identity)) — only required when it is `service_principal` (the default), unused when it is `msi`.
 - `aws_ssm_target_instance_id` / `aws_ssm_document_parameters` — **optional, mutually complementary**: set `aws_ssm_target_instance_id` only when `aws_ssm_document_name` runs `aws:runCommand` steps against an SSM-managed instance (the default lab/dev EC2 target). Leave it empty (`""`, the default) and use `aws_ssm_document_parameters` (a list of `"Key=Value"` strings) instead when the document orchestrates AWS API calls directly — for example a document whose real target is an EKS cluster (`ClusterName=...`), a Lambda function, or a tag-based patch/AMI-update document that selects its own targets via `TagKey`/`TagValue` instead of a single instance ID. See the fully worked tag-based example (with `operation`, `AutomationAssumeRole`, `TagKey`/`TagValue`, `NoReboot`, `BackupImage`, and the pre/post/on-exit hook parameters) in `group_vars/all/demo_variables.yml.example`. Neither variable is validated in `aap_config.yml`'s pre-task assertions, since which one applies depends on the document's own design, not on the deployment mode.
+- **Parameter name/case mismatches**: `AWS - Run SSM document and collect output`, `AWS - Schedule SSM via maintenance window`, and `AWS - SSM preview (dry run)` all fetch the target document's own declared parameter schema (`aws ssm get-document --document-format JSON`) and fail fast with the document's real, case-sensitive parameter names when `aws_ssm_document_parameters` (or `aws_ssm_target_instance_id` -> `InstanceId`) supplies a key the document does not declare, or omits one it requires (no default value). This replaces AWS's own terse `StartAutomationExecution`/`RegisterTaskWithMaintenanceWindow` error (`Undefined execution inputs: [...]`), which never lists the correct names. Always run `AWS - SSM preview (dry run)` first against a customer-owned document you have not used before — its report also prints the full declared/required parameter list.
 - `[LAB/DEV ONLY]` — consumed exclusively by `Setup - *` / `Teardown - *`: `azure_create_automation_account`, `azure_resource_group_location`, `azure_automation_account_sku`, `azure_runbook_description`, and the whole AWS networking/IAM/EC2 provisioning block (`aws_create_network_resources`, EC2 instance settings, bring-your-own and create-from-scratch network/IAM variables, maintenance window creation settings) in `demo_variables.yml.example`. No secret in this demo is exclusively lab/dev-only today — see `vault.yml.example`.
 
 Both `playbooks/aap_config.yml` (pre-task assertions) and `playbooks/verify.yml` enforce this split: the `[LAB/DEV ONLY]` checks only run `when: demo_manage_infrastructure | bool`, so a customer/PoC deployment fails fast only on the variables it actually needs, never on unrelated provisioning variables.
@@ -332,6 +333,41 @@ header.
 AWS SSM automation runs via the `aws` CLI (included in the custom EE). No certified
 collection module exists for SSM Automation execution or maintenance window task
 registration.
+
+### Passing parameters to Python runbooks
+
+`Azure - Run Runbook and collect output` and `Azure - Schedule Runbook` accept
+runbook parameters two ways at launch time: `azure_runbook_parameters` (an
+explicit `{Name: Value}` dict, when the declared parameter names are known)
+or `azure_runbook_parameter_values` (an ordered list of values only, resolved
+to real names via the runbook's own declared parameter position). Neither is
+a `demo_variables.yml` setting — both are extra_vars supplied per launch
+(Survey, workflow extra_vars, or `-e` on the CLI), since they vary per job run.
+
+Python runbooks (`runbookType` `Python2`/`Python3`) are a special case in two
+ways, both documented on
+[Configure runbook input parameters](https://learn.microsoft.com/en-us/azure/automation/runbook-input-parameters):
+
+- **No declared parameter names.** Unlike PowerShell/Workflow/Graphical
+  runbooks, the Automation REST API never returns a `properties.parameters`
+  schema for Python — the script reads `sys.argv` positionally instead. Both
+  playbooks detect this (`runbookType` match) and, when
+  `azure_runbook_parameter_values` is used, build placeholder keys (`param1`,
+  `param2`, ...) instead of resolving real names — **only the dict's
+  iteration order maps to `sys.argv` position, the key text itself is
+  irrelevant to Azure.**
+- **String is the only supported value type.** The "Input types" table on
+  that page lists a single entry for Python (`String`), versus several for
+  the other runbook types (`Boolean`, `INT32`, `DateTime`, `Array`,
+  `Hashtable`, ...). Both playbooks coerce every parameter value to a string
+  before sending it whenever the target is a Python runbook, regardless of
+  which of the two parameter-passing modes was used — a non-string value
+  (for example a YAML-inferred boolean/integer surviving from an unquoted
+  extra_var, or a non-text Survey field type) risks the Automation REST API
+  silently accepting the request while dropping the entire `parameters`
+  object rather than rejecting just that one value. Run `Azure - Runbook
+  preview (dry run)` first to confirm the runbook's detected type and the
+  positional mapping before launching the real job template.
 
 ## Teardown and reset
 

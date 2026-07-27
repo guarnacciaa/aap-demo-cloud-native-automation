@@ -47,6 +47,19 @@
         - aws
         - run
 
+    # Validates aws_ssm_document_parameters/aws_ssm_target_instance_id against
+    # the document's own declared schema before spending an automation
+    # execution on a mismatch. See tasks/validate_ssm_document_parameters.yml
+    # header for why this matters — StartAutomationExecution's own
+    # "Undefined execution inputs" error never names the correct parameters.
+    - name: Validate parameters against the document's declared schema
+      ansible.builtin.include_tasks: tasks/validate_ssm_document_parameters.yml
+      vars:
+        ssm_validate_include_instance_id: true
+      tags:
+        - aws
+        - run
+
     - name: Start SSM Automation execution
       ansible.builtin.command:
         cmd: >-

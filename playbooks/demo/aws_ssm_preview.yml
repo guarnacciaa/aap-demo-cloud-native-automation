@@ -141,6 +141,18 @@
         - aws
         - preview
 
+    # This is the check that would have caught, before any real execution,
+    # a mismatch like AWS's own terse "Undefined execution inputs: [...]"
+    # error from StartAutomationExecution — see
+    # tasks/validate_ssm_document_parameters.yml header for the full rationale.
+    - name: Validate parameters against the document's declared schema
+      ansible.builtin.include_tasks: tasks/validate_ssm_document_parameters.yml
+      vars:
+        ssm_validate_include_instance_id: true
+      tags:
+        - aws
+        - preview
+
     - name: Describe the configured maintenance window (when set)
       # Only meaningful once aws_ssm_maintenance_window_id has been copied in
       # from 02_aws_setup.yml output; skipped entirely at the CHANGE_ME default
@@ -162,6 +174,10 @@
       ansible.builtin.debug:
         msg:
           - "Automation document: {{ aws_ssm_document_name }} (latest version: {{ ssm_document_info.LatestVersion }}, status: {{ ssm_document_info.Status }})"
+          - >-
+            Document declares these input parameters (case-sensitive):
+            {{ (ssm_document_parameters_schema | list | sort | join(', ')) if (ssm_document_parameters_schema | length) > 0 else '(none)' }}.
+            Required (no default value): {{ (ssm_document_required_parameters | sort | join(', ')) if (ssm_document_required_parameters | length) > 0 else '(none)' }}.
           - >-
             {{ ('SSM target ' + aws_ssm_target_instance_id + ': PingStatus ' + ssm_instance_info[0].PingStatus + ', platform ' + ssm_instance_info[0].PlatformType + '.')
                if aws_ssm_target_instance_id | length > 0

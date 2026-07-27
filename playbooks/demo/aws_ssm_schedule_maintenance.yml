@@ -32,6 +32,19 @@
     AWS_DEFAULT_REGION: "{{ aws_region | default('us-east-1') }}"
 
   tasks:
+    # Validates aws_ssm_document_parameters against the document's own
+    # declared schema before registering the maintenance window task. Unlike
+    # aws_ssm_run_document.yml/aws_ssm_preview.yml, InstanceId is never
+    # merged into this document's Parameters map here — instance targeting
+    # goes through the separate --targets flag below — so
+    # ssm_validate_include_instance_id is left at its default (false). See
+    # tasks/validate_ssm_document_parameters.yml header for the full rationale.
+    - name: Validate parameters against the document's declared schema
+      ansible.builtin.include_tasks: tasks/validate_ssm_document_parameters.yml
+      tags:
+        - aws
+        - schedule
+
     # Targets (--targets) identifies an SSM-managed instance to run the
     # Automation task against; it is not required by the RegisterTaskWith-
     # MaintenanceWindow API for AUTOMATION tasks whose document does not act

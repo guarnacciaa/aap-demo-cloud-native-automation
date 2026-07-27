@@ -107,6 +107,11 @@
     # only positional values were supplied, resolve the runbook's own
     # definition (which exposes each parameter's zero-based `position`) to
     # recover the real names and build the dictionary the API expects.
+    # Fetched unconditionally (not only when azure_runbook_parameter_values is
+    # set): azure_runbook_is_python below must be known even when the operator
+    # supplies azure_runbook_parameters directly, since the string-coercion
+    # step near the end of this play applies regardless of which of the two
+    # parameter-passing modes was used.
     - name: Retrieve runbook definition to resolve positional parameter names
       ansible.builtin.uri:
         url: >-
@@ -116,7 +121,6 @@
           Authorization: "Bearer {{ azure_access_token }}"
         status_code: 200
       register: azure_runbook_definition
-      when: azure_runbook_parameter_values | length > 0
       tags:
         - azure
         - run
@@ -129,7 +133,6 @@
       # can work around by querying harder.
       ansible.builtin.set_fact:
         azure_runbook_is_python: "{{ (azure_runbook_definition.json.properties.runbookType | default('')) is match('Python') }}"
-      when: azure_runbook_parameter_values | length > 0
       tags:
         - azure
         - run
@@ -189,6 +192,35 @@
       ansible.builtin.set_fact:
         azure_runbook_parameters: "{{ dict(azure_runbook_parameter_names | zip(azure_runbook_parameter_values)) }}"
       when: azure_runbook_parameter_values | length > 0
+      no_log: "{{ demo_no_log | default(false) }}"
+      tags:
+        - azure
+        - run
+
+    # Python is the only runbook type in Azure Automation whose declared
+    # input type list is a single entry: "String" (see the Input types table
+    # at https://learn.microsoft.com/en-us/azure/automation/runbook-input-parameters
+    # — PowerShell/Workflow/Graphical additionally accept Boolean, INT32,
+    # DateTime, Array, Hashtable). A non-string value reaching the ARM API in
+    # the parameters object for a Python runbook (for example a YAML-inferred
+    # boolean/integer surviving from an unquoted demo_variables.yml value, or
+    # a non-text Survey field type) risks the API silently accepting the
+    # request while dropping the whole parameters object rather than
+    # rejecting just that one value — matching the "properties.parameters: {}
+    # persisted" symptom seen in earlier live testing (see docs/testing.md).
+    # Coerce every value to a string here so this cannot happen, regardless
+    # of whether azure_runbook_parameters or azure_runbook_parameter_values
+    # was used above.
+    - name: Coerce parameter values to string for Python runbooks (only supported input type)
+      ansible.builtin.set_fact:
+        azure_runbook_parameters: >-
+          {{
+            dict(
+              (azure_runbook_parameters | dict2items | map(attribute='key') | list)
+              | zip(azure_runbook_parameters | dict2items | map(attribute='value') | map('string') | list)
+            )
+          }}
+      when: azure_runbook_is_python | default(false)
       no_log: "{{ demo_no_log | default(false) }}"
       tags:
         - azure

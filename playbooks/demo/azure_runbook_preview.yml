@@ -244,7 +244,7 @@
             {{ azure_recent_runbook_jobs | map(attribute='name') | list | join(', ') if azure_recent_runbook_jobs | length > 0 else 'none found' }}
           - >-
             {{
-              'Python runbook: Azure does not expose declared parameter names for Python (properties.parameters is always empty). Parameters are positional only, mapped to sys.argv by dict order — the key text itself is irrelevant.'
+              'Python runbook: Azure does not expose declared parameter names for Python (properties.parameters is always empty). Parameters are positional only, mapped to sys.argv by dict order — the key text itself is irrelevant. Also note: Python is the only runbook type that supports exclusively String-typed values (see Input types at https://learn.microsoft.com/en-us/azure/automation/runbook-input-parameters) — Azure - Run Runbook and collect output coerces every value to a string before sending it, since a non-string value risks the whole parameters object being silently dropped.'
               if (azure_runbook_is_python | default(false))
               else (
                 'Declared parameters (' ~ (azure_runbook_declared_parameters | length) ~ '), ordered by position: '

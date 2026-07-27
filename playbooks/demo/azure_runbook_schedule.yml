@@ -138,6 +138,11 @@
     # parameters by name, so positional values must be mapped to the runbook's
     # declared parameter names (via their zero-based `position`) before being
     # sent to the jobSchedules API.
+    # Fetched unconditionally (not only when azure_runbook_parameter_values is
+    # set): azure_runbook_is_python below must be known even when the operator
+    # supplies azure_runbook_parameters directly, since the string-coercion
+    # step near the end of this play applies regardless of which of the two
+    # parameter-passing modes was used.
     - name: Retrieve runbook definition to resolve positional parameter names
       ansible.builtin.uri:
         url: >-
@@ -147,7 +152,6 @@
           Authorization: "Bearer {{ azure_access_token }}"
         status_code: 200
       register: azure_runbook_definition
-      when: azure_runbook_parameter_values | length > 0
       tags:
         - azure
         - schedule
@@ -163,7 +167,6 @@
     - name: Detect whether the target runbook is a Python runbook
       ansible.builtin.set_fact:
         azure_runbook_is_python: "{{ (azure_runbook_definition.json.properties.runbookType | default('')) is match('Python') }}"
-      when: azure_runbook_parameter_values | length > 0
       tags:
         - azure
         - schedule
@@ -208,6 +211,27 @@
       ansible.builtin.set_fact:
         azure_runbook_parameters: "{{ dict(azure_runbook_parameter_names | zip(azure_runbook_parameter_values)) }}"
       when: azure_runbook_parameter_values | length > 0
+      no_log: "{{ demo_no_log | default(false) }}"
+      tags:
+        - azure
+        - schedule
+
+    # See the equivalent task in azure_runbook_run.yml for the full rationale:
+    # Python is the only runbook type whose declared Input types list is a
+    # single entry, "String" (Microsoft Learn, runbook-input-parameters).
+    # Coerce every value to a string here too, regardless of which
+    # parameter-passing mode was used above, so a scheduled Python runbook
+    # job cannot silently lose its parameters the same way a direct run could.
+    - name: Coerce parameter values to string for Python runbooks (only supported input type)
+      ansible.builtin.set_fact:
+        azure_runbook_parameters: >-
+          {{
+            dict(
+              (azure_runbook_parameters | dict2items | map(attribute='key') | list)
+              | zip(azure_runbook_parameters | dict2items | map(attribute='value') | map('string') | list)
+            )
+          }}
+      when: azure_runbook_is_python | default(false)
       no_log: "{{ demo_no_log | default(false) }}"
       tags:
         - azure

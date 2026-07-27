@@ -1,0 +1,108 @@
+# Description: Shared validation that the parameters a run/preview is about to
+# pass to an AWS SSM Automation document actually match the document's own
+# declared parameter schema. Included by aws_ssm_preview.yml (dry run),
+# aws_ssm_run_document.yml, and aws_ssm_schedule_maintenance.yml.
+#
+# Why this exists: StartAutomationExecution / RegisterTaskWithMaintenanceWindow
+# only reject a parameter mismatch at call time, with a terse message that
+# never lists the document's actual declared parameter names, for example:
+#   "Undefined execution inputs: [operation, SnsTopicArnRegion]"
+# This is easy to hit in practice because SSM Automation documents mix
+# parameter name casing inconsistently within the very same document
+# (lowercase "operation" next to PascalCase "AutomationAssumeRole" is common),
+# with no enforced convention, and different documents rarely share the exact
+# same schema even when they serve a similar purpose. Fetching the document's
+# own schema here and diffing it against what this run supplies turns that
+# terse AWS error into an actionable one naming the real parameter names, and
+# additionally catches missing required parameters before starting a real
+# execution — StartAutomationExecution only reports those after the execution
+# has already started.
+#
+# Required vars (set by the including play or passed via `vars:` on the
+# include_tasks call): aws_ssm_document_name, aws_region,
+# aws_ssm_document_parameters (list of "Key=Value" strings). Optional:
+# ssm_validate_include_instance_id (bool, default false) — set true only when
+# the including play merges aws_ssm_target_instance_id into the document's
+# Parameters map as InstanceId (aws_ssm_run_document.yml, aws_ssm_preview.yml);
+# leave false when instance targeting goes through a separate mechanism not
+# part of the document's own Parameters (aws_ssm_schedule_maintenance.yml's
+# --targets flag).
+---
+- name: Fetch the document's own parameter schema
+  ansible.builtin.command:
+    cmd: >-
+      aws ssm get-document
+      --name {{ aws_ssm_document_name }}
+      --document-format JSON
+      --region {{ aws_region }}
+      --output json
+  register: ssm_document_get
+  changed_when: false
+  tags:
+    - aws
+    - preview
+
+- name: Parse the document's declared parameters
+  # --document-format JSON above guarantees Content is a JSON string,
+  # regardless of whether the document was originally authored in YAML or JSON.
+  ansible.builtin.set_fact:
+    ssm_document_parameters_schema: "{{ ((ssm_document_get.stdout | from_json).Content | from_json).parameters | default({}) }}"
+  tags:
+    - aws
+    - preview
+
+- name: Determine which declared parameters are required (no default value)
+  ansible.builtin.set_fact:
+    ssm_document_required_parameters: >-
+      {{
+        ssm_document_parameters_schema
+        | dict2items
+        | rejectattr('value.default', 'defined')
+        | map(attribute='key')
+        | list
+      }}
+  tags:
+    - aws
+    - preview
+
+- name: Compute the parameter keys this run/preview would supply
+  ansible.builtin.set_fact:
+    ssm_supplied_parameter_keys: >-
+      {{
+        (['InstanceId'] if (ssm_validate_include_instance_id | default(false) | bool) and (aws_ssm_target_instance_id | default('') | length > 0) else [])
+        + (aws_ssm_document_parameters | map('regex_replace', '^([^=]+)=.*$', '\1') | list)
+      }}
+  tags:
+    - aws
+    - preview
+
+- name: Assert every supplied parameter key is declared by the document
+  ansible.builtin.assert:
+    that:
+      - (ssm_supplied_parameter_keys | difference(ssm_document_parameters_schema | list)) | length == 0
+    fail_msg: >-
+      aws_ssm_document_parameters{{ ' / aws_ssm_target_instance_id' if (ssm_validate_include_instance_id | default(false) | bool) else '' }}
+      would supply
+      {{ (ssm_supplied_parameter_keys | difference(ssm_document_parameters_schema | list)) | join(', ') }},
+      which {{ aws_ssm_document_name }} does not declare (AWS itself would
+      reject this with "Undefined execution inputs"). This document declares
+      exactly these input parameters (case-sensitive):
+      {{ (ssm_document_parameters_schema | list | sort | join(', ')) if (ssm_document_parameters_schema | length) > 0 else '(none)' }}.
+      Fix the key names/case in aws_ssm_document_parameters in
+      demo_variables.yml to match exactly.
+  tags:
+    - aws
+    - preview
+
+- name: Assert every required parameter is supplied
+  ansible.builtin.assert:
+    that:
+      - (ssm_document_required_parameters | difference(ssm_supplied_parameter_keys)) | length == 0
+    fail_msg: >-
+      {{ aws_ssm_document_name }} requires
+      {{ (ssm_document_required_parameters | difference(ssm_supplied_parameter_keys)) | join(', ') }}
+      (no default value declared in the document), but they are missing from
+      aws_ssm_document_parameters{{ ' (or aws_ssm_target_instance_id for InstanceId)' if (ssm_validate_include_instance_id | default(false) | bool) else '' }}.
+  tags:
+    - aws
+    - preview
