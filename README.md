@@ -45,7 +45,7 @@ Phases 1 and 3 only exist when `demo_manage_infrastructure: true` (default); see
 | Mode | `demo_manage_infrastructure` | AAP objects created | Use when |
 |---|---|---|---|
 | Lab / dev | `true` (default) | Full lifecycle: `Setup - Azure runbook`, `Setup - AWS SSM resources`, `Teardown - Azure runbook`, `Teardown - AWS SSM resources`, `WF - Demo setup`, `WF - Demo teardown`, plus all scenario and dry-run objects | You are running the demo yourself and want AAP to create and destroy the Azure Automation Account and AWS networking/IAM/EC2 target |
-| Customer / PoC | `false` | Only the scenario job templates (`Azure - Run Runbook and collect output`, `Azure - Schedule Runbook`, `AWS - Run SSM document and collect output`, `AWS - Schedule SSM via maintenance window`, `Notify - Email automation results`), the four dry-run templates, and their workflows | The customer already provides the Automation Account and SSM target; no provisioning or teardown object is created in AAP, removing any risk of accidentally launching a job that creates a duplicate Automation Account or tears down the customer's existing SSM target |
+| Customer / PoC | `false` | Only the scenario job templates (`Azure - Run Runbook and collect output`, `Azure - Schedule Runbook`, `AWS - Run SSM document and collect output`, `AWS - Schedule SSM via maintenance window`, `Notify - Azure automation results`, `Notify - AWS automation results`), the four dry-run templates, and their workflows | The customer already provides the Automation Account and SSM target; no provisioning or teardown object is created in AAP, removing any risk of accidentally launching a job that creates a duplicate Automation Account or tears down the customer's existing SSM target |
 
 In customer mode, set `azure_automation_resource_group` / `azure_automation_account` / `azure_runbook_name` and `aws_ssm_document_name` to the customer's existing resources, and scope the Azure/AWS credentials down to the reduced permission set (see [docs/setup.md](docs/setup.md)). `aws_ssm_target_instance_id` is optional: set it only when the SSM document targets an SSM-managed instance; otherwise leave it empty and use `aws_ssm_document_parameters` for documents that call AWS APIs directly (for example against an EKS cluster).
 
@@ -184,9 +184,10 @@ The **Setup** and **Teardown** templates are only created in AAP when `demo_mana
 | Azure - Schedule Runbook | `demo/azure_runbook_schedule.yml` | Always |
 | AWS - Run SSM document and collect output | `demo/aws_ssm_run_document.yml` | Always |
 | AWS - Schedule SSM via maintenance window | `demo/aws_ssm_schedule_maintenance.yml` | Always |
-| Notify - Email automation results | `demo/notify_results.yml` (optional) | Always |
+| Notify - Azure automation results | `demo/notify_results.yml` (optional) | Always |
+| Notify - AWS automation results | `demo/notify_results.yml` (optional) | Always |
 
-`Notify - Email automation results` and `Notify - SMTP preflight check (dry run)` below use a custom **SMTP Credentials** credential (`group_vars/all/credential_types.yml`) to inject `smtp_username`/`smtp_password` at run time, instead of storing the password in the template's own `extra_vars` — the same secrets-injection principle AAP's built-in Azure/AWS credential types use for `azure_client_secret`/`aws_secret_key`.
+`Notify - Azure automation results` and `Notify - AWS automation results` are two job templates over the **same** playbook, distinguished only by their `notification_scope` extra_var (`azure`/`aws`): no workflow in this demo runs both clouds together (see `group_vars/all/workflow_templates.yml` — each cloud has its own execute-and-collect workflow), so a single combined template would always show an irrelevant "not run" row for the cloud that did not execute. Both, and `Notify - SMTP preflight check (dry run)` below, use a custom **SMTP Credentials** credential (`group_vars/all/credential_types.yml`) to inject `smtp_username`/`smtp_password` at run time, instead of storing the password in the template's own `extra_vars` — the same secrets-injection principle AAP's built-in Azure/AWS credential types use for `azure_client_secret`/`aws_secret_key`.
 
 ### Dry-run / preview templates
 
@@ -259,7 +260,7 @@ Child inventory names carry the artifact suffix (not the bare `Azure-Resources` 
 | `Notify - SMTP preflight check (dry run)` fails on port reachability | SMTP host/port blocked by firewall, or wrong port for the provider | Confirm `smtp_host`/`smtp_port` and that egress on that port is allowed |
 | `Notify - SMTP preflight check (dry run)` fails on authentication | Wrong `smtp_username`/`vault_smtp_password`, or STARTTLS required but `smtp_use_tls: false` | Verify credentials; most providers require `smtp_use_tls: true` on port 587 |
 | `Notify - SMTP preflight check (dry run)` fails with `CERTIFICATE_VERIFY_FAILED: Hostname mismatch` | The relay's certificate CN/SAN does not match `smtp_host` (common when reaching it through a load balancer or internal DNS alias) | Confirm this is expected (not a misconfigured `smtp_host`); if so, set `smtp_validate_certs: false` — `notify_results.yml`'s actual send path never validates this either, so the precheck is only being brought in line with it |
-| `Notify - Email automation results` fails with `smtplib.SMTPSenderRefused: (553, ..., 'root')` | `notification_from` is unset and `smtp_username` is also missing, so `community.general.mail` fell back to its own default sender of the bare string `root`, which the relay rejects for lacking a domain | Set `notification_from` (or ensure `smtp_username` is a full mailbox address) in `demo_variables.yml` and re-apply CasC |
+| `Notify - Azure automation results` / `Notify - AWS automation results` fails with `smtplib.SMTPSenderRefused: (553, ..., 'root')` | `notification_from` is unset and `smtp_username` is also missing, so `community.general.mail` fell back to its own default sender of the bare string `root`, which the relay rejects for lacking a domain | Set `notification_from` (or ensure `smtp_username` is a full mailbox address) in `demo_variables.yml` and re-apply CasC |
 
 ## Reset
 

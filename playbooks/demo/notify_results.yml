@@ -1,4 +1,11 @@
-# Description: Optional email notification with automation output.
+# Description: Optional email notification with automation output. Shared by
+# two job templates — Notify - Azure automation results and
+# Notify - AWS automation results — since no workflow in this demo runs both
+# clouds together (see group_vars/all/workflow_templates.yml): each notify
+# node only ever follows its own cloud's job. notification_scope selects
+# which cloud's status/output populates the report so an Azure-only or
+# AWS-only workflow run never shows an irrelevant "not run" row for the
+# other cloud.
 # Uses community.general.mail — no Red Hat certified or validated SMTP module exists.
 # community.general is acceptable here given the optional, non-critical scope.
 # Gated by enable_email_notification=true; defaults to skipped in all job templates.
@@ -20,14 +27,39 @@
       tags:
         - notify
 
-    # Each cloud step only runs its own set_stats when it actually executes in
-    # the workflow, so status/error facts may be entirely absent here (e.g. a
-    # workflow that only exercises AWS). 'not run' distinguishes that case from
-    # a real failure so the email body and subject never claim a false success.
-    - name: Normalize per-cloud status facts published upstream in the workflow
+    # notification_scope is set on each job template's own extra_vars (see
+    # job_templates.yml), never left for the operator to supply at launch —
+    # this assert only catches the job template CasC itself drifting out of
+    # sync with this playbook.
+    - name: Validate notification_scope selects a single supported cloud
+      ansible.builtin.assert:
+        that:
+          - notification_scope is defined
+          - notification_scope in ['azure', 'aws']
+        fail_msg: >-
+          notification_scope must be 'azure' or 'aws'. This should always be
+          set by the calling job template's extra_vars — check
+          group_vars/all/job_templates.yml for Notify - Azure automation
+          results / Notify - AWS automation results.
+      tags:
+        - notify
+
+    # The workflow node that leads into this job template only ever runs the
+    # automation for one cloud (see workflow_templates.yml), so only that
+    # cloud's status/output facts are meaningful here. 'not run' covers the
+    # edge case of this job template being launched standalone, without the
+    # preceding workflow node ever having published its status.
+    - name: Normalize the selected cloud's status fact published upstream in the workflow
       ansible.builtin.set_fact:
         azure_runbook_status: "{{ azure_runbook_status | default('not run') }}"
+      when: notification_scope == 'azure'
+      tags:
+        - notify
+
+    - name: Normalize the selected cloud's status fact published upstream in the workflow
+      ansible.builtin.set_fact:
         aws_ssm_status: "{{ aws_ssm_status | default('not run') }}"
+      when: notification_scope == 'aws'
       tags:
         - notify
 
@@ -36,27 +68,74 @@
         automation_overall_success: >-
           {{
             (azure_runbook_status in ['Completed', 'not run'])
-            and (aws_ssm_status in ['Success', 'not run'])
+            if notification_scope == 'azure'
+            else (aws_ssm_status in ['Success', 'not run'])
           }}
       tags:
         - notify
 
-    - name: Build notification body from workflow stats when available
+    # HTML body (banner colored by outcome, single-component status row,
+    # error box only when there is something to show) instead of a
+    # plain-text dump, per customer feedback that the original combined
+    # report read as a raw log export. CSS is inlined on every element (no
+    # <style> block) because several major email clients (Outlook, Gmail)
+    # strip <style> tags or ignore embedded stylesheets entirely.
+    - name: Build HTML notification body from workflow stats when available
       ansible.builtin.set_fact:
         notification_body: |
-          Automation PoC results
-          ----------------------
-          Azure runbook status: {{ azure_runbook_status }}
-          Azure runbook output:
-          {{ azure_runbook_output | default('N/A') }}
-          {% if azure_runbook_error_details | default('') | length > 0 %}
-          Azure runbook error details:
-          {{ azure_runbook_error_details }}
-          {% endif %}
+          <!DOCTYPE html>
+          <html>
+            <body style="font-family: Arial, Helvetica, sans-serif; background-color:#f4f4f4; margin:0; padding:24px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px; margin:0 auto; background-color:#ffffff; border-radius:6px; overflow:hidden; border:1px solid #e0e0e0;">
+                <tr>
+                  <td style="background-color: {{ '#2e7d32' if automation_overall_success else '#c62828' }}; padding:20px 24px;">
+                    <span style="color:#ffffff; font-size:20px; font-weight:bold;">
+                      {{ 'Azure Automation Report' if notification_scope == 'azure' else 'AWS Automation Report' }} — {{ 'SUCCESS' if automation_overall_success else 'FAILURE' }}
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:24px;">
+                    <p style="margin:0 0 16px 0; color:#333333; font-size:14px;">
+                      Generated {{ now(utc=true, fmt='%Y-%m-%d %H:%M UTC') }}
+                    </p>
 
-          AWS SSM status: {{ aws_ssm_status }}
-          AWS SSM outputs:
-          {{ aws_ssm_outputs | default({}) | to_nice_json }}
+                    <table width="100%" cellpadding="8" cellspacing="0" style="border-collapse:collapse; margin-bottom:20px;">
+                      <tr style="background-color:#f0f0f0;">
+                        <th align="left" style="font-size:13px; color:#555555;">Component</th>
+                        <th align="left" style="font-size:13px; color:#555555;">Status</th>
+                      </tr>
+                      <tr>
+                        <td style="font-size:14px;">{{ 'Azure Runbook' if notification_scope == 'azure' else 'AWS SSM' }}</td>
+                        <td style="font-size:14px; font-weight:bold; color:{{ '#2e7d32' if automation_overall_success else '#c62828' }};">
+                          {{ azure_runbook_status if notification_scope == 'azure' else aws_ssm_status }}
+                        </td>
+                      </tr>
+                    </table>
+
+                    {% if notification_scope == 'azure' and (azure_runbook_error_details | default('') | length > 0) %}
+                    <div style="background-color:#fdecea; border-left:4px solid #c62828; padding:12px; margin-bottom:16px; font-size:13px; color:#7a1414;">
+                      <strong>Azure error details</strong>
+                      <pre style="white-space:pre-wrap; font-family:monospace; margin:8px 0 0 0;">{{ azure_runbook_error_details }}</pre>
+                    </div>
+                    {% endif %}
+
+                    <p style="font-size:13px; color:#555555; margin:0 0 6px 0;">
+                      <strong>{{ 'Runbook output' if notification_scope == 'azure' else 'SSM outputs' }}</strong>
+                    </p>
+                    <pre style="background-color:#f7f7f7; border:1px solid #eeeeee; border-radius:4px; padding:12px; font-size:12px; overflow-x:auto;">{{ (azure_runbook_output | default('N/A')) if notification_scope == 'azure' else (aws_ssm_outputs | default({}) | to_nice_json) }}</pre>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="background-color:#fafafa; padding:16px 24px; border-top:1px solid #eeeeee;">
+                    <span style="font-size:12px; color:#999999;">
+                      Automated notification from Red Hat Ansible Automation Platform. Do not reply to this address.
+                    </span>
+                  </td>
+                </tr>
+              </table>
+            </body>
+          </html>
       tags:
         - notify
 
@@ -76,9 +155,11 @@
         sender: "{{ notification_from | default(smtp_username) }}"
         to: "{{ notification_to }}"
         subject: >-
-          AAP multicloud automation results —
+          {{ 'Azure' if notification_scope == 'azure' else 'AWS' }}
+          automation results —
           {{ 'SUCCESS' if automation_overall_success else 'FAILURE' }}
         body: "{{ notification_body }}"
+        subtype: html
         secure: "{{ 'starttls' if (smtp_use_tls | default(true) | bool) else 'never' }}"
       no_log: "{{ demo_no_log | default(false) }}"
       tags:

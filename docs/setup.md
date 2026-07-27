@@ -7,7 +7,7 @@ Set `demo_manage_infrastructure` in `group_vars/all/demo_variables.yml` **before
 | `demo_manage_infrastructure` | Scenario | What CasC creates |
 |---|---|---|
 | `true` (default) | Lab, dev, or self-running the full demo; no pre-existing Azure Automation Account or AWS SSM target | `Setup - Azure runbook`, `Setup - AWS SSM resources`, `Teardown - Azure runbook`, `Teardown - AWS SSM resources` job templates, `WF - Demo setup`, `WF - Demo teardown`, plus all scenario and dry-run objects |
-| `false` | Deploying at a customer site where the Automation Account and SSM target already exist | Only the scenario job templates (`Azure - Run Runbook and collect output`, `Azure - Schedule Runbook`, `AWS - Run SSM document and collect output`, `AWS - Schedule SSM via maintenance window`, `Notify - Email automation results`), the four dry-run templates, and their workflows |
+| `false` | Deploying at a customer site where the Automation Account and SSM target already exist | Only the scenario job templates (`Azure - Run Runbook and collect output`, `Azure - Schedule Runbook`, `AWS - Run SSM document and collect output`, `AWS - Schedule SSM via maintenance window`, `Notify - Azure automation results`, `Notify - AWS automation results`), the four dry-run templates, and their workflows |
 
 The flag is read in `playbooks/aap_config.yml`: when `true`, the objects defined in `group_vars/all/job_templates_infra.yml` and `group_vars/all/workflow_templates_infra.yml` are merged into the lists the `infra.aap_configuration` dispatch role applies; when `false`, those two files are still loaded (Ansible auto-loads every file under `group_vars/all/`) but never merged in, so their objects are never created in AAP.
 

@@ -107,7 +107,13 @@ controller_templates:
     labels:
       - "{{ demo_label_name }}"
 
-  - name: Notify - Email automation results
+  # Two dedicated notify job templates, not one combined one: no workflow in
+  # this demo runs Azure and AWS together (see workflow_templates.yml — each
+  # cloud has its own execute-and-collect workflow), so a single shared
+  # template would always show an irrelevant "not run" row for the cloud
+  # that did not execute. Both point at the same playbook and differ only in
+  # notification_scope, which selects the relevant section of the report.
+  - name: Notify - Azure automation results
     organization: "{{ demo_organization_name }}"
     inventory: "{{ demo_inventory_name }}"
     project: "{{ demo_project_name }}"
@@ -118,6 +124,9 @@ controller_templates:
     ask_variables_on_launch: true
     extra_vars:
       enable_email_notification: "{{ enable_email_notification | default(false) }}"
+      # Fixed per job template — not sourced from demo_variables.yml — since
+      # this template only ever follows the Azure workflow node.
+      notification_scope: azure
       # Non-secret SMTP connection settings must be threaded through
       # extra_vars for the same reason as azure_auth_mode above: AAP's
       # generated inventory does not reliably auto-load
@@ -135,6 +144,30 @@ controller_templates:
       # demo_variables.yml.example. See the comment there for why an explicit
       # sender is required (community.general.mail otherwise defaults to the
       # bare string "root", which relays reject).
+      notification_from: "{{ notification_from }}"
+      smtp_use_tls: "{{ smtp_use_tls | default(true) }}"
+      demo_no_log: "{{ demo_no_log }}"
+    labels:
+      - "{{ demo_label_name }}"
+
+  - name: Notify - AWS automation results
+    organization: "{{ demo_organization_name }}"
+    inventory: "{{ demo_inventory_name }}"
+    project: "{{ demo_project_name }}"
+    playbook: playbooks/demo/notify_results.yml
+    execution_environment: "{{ demo_execution_environment_name }}"
+    credentials:
+      - "{{ smtp_credential_name }}"
+    ask_variables_on_launch: true
+    extra_vars:
+      enable_email_notification: "{{ enable_email_notification | default(false) }}"
+      # Fixed per job template — this one only ever follows the AWS workflow
+      # node. See the comment on Notify - Azure automation results above for
+      # why every other extra_var here is required.
+      notification_scope: aws
+      smtp_host: "{{ smtp_host }}"
+      smtp_port: "{{ smtp_port }}"
+      notification_to: "{{ notification_to }}"
       notification_from: "{{ notification_from }}"
       smtp_use_tls: "{{ smtp_use_tls | default(true) }}"
       demo_no_log: "{{ demo_no_log }}"
@@ -269,17 +302,18 @@ controller_templates:
     ask_variables_on_launch: true
     extra_vars:
       enable_email_notification: "{{ enable_email_notification | default(false) }}"
-      # See the comment on Notify - Email automation results above: only the
-      # non-secret SMTP settings go here — smtp_username/smtp_password are
-      # injected by the SMTP Credentials credential instead.
+      # See the comment on Notify - Azure automation results / Notify - AWS
+      # automation results above: only the non-secret SMTP settings go
+      # here — smtp_username/smtp_password are injected by the SMTP
+      # Credentials credential instead.
       smtp_host: "{{ smtp_host }}"
       smtp_port: "{{ smtp_port }}"
       notification_to: "{{ notification_to }}"
       smtp_use_tls: "{{ smtp_use_tls | default(true) }}"
       # Only precheck_smtp.yml reads this (see files/smtp_auth_check.py) —
       # community.general.mail's own STARTTLS call never validates the
-      # certificate regardless of this flag, so it is not needed on
-      # Notify - Email automation results above.
+      # certificate regardless of this flag, so it is not needed on either
+      # notify job template above.
       smtp_validate_certs: "{{ smtp_validate_certs | default(true) }}"
       demo_no_log: "{{ demo_no_log }}"
     labels:

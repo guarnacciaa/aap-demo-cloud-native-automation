@@ -28,7 +28,7 @@ controller_workflows:
         failure_nodes: []
         always_nodes: []
       - identifier: notify
-        unified_job_template: Notify - Email automation results
+        unified_job_template: Notify - Azure automation results
         organization: "{{ demo_organization_name }}"
         success_nodes: []
         failure_nodes: []
@@ -63,7 +63,7 @@ controller_workflows:
         failure_nodes: []
         always_nodes: []
       - identifier: notify
-        unified_job_template: Notify - Email automation results
+        unified_job_template: Notify - AWS automation results
         organization: "{{ demo_organization_name }}"
         success_nodes: []
         failure_nodes: []

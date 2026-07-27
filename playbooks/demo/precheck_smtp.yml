@@ -1,6 +1,7 @@
 # Description: Read-only preflight check for the email notification step.
-# Confirms the SMTP server configured for Notify - Email automation results
-# is reachable and that the account can authenticate (STARTTLS + LOGIN only)
+# Confirms the SMTP server configured for Notify - Azure automation results /
+# Notify - AWS automation results is reachable and that the account can
+# authenticate (STARTTLS + LOGIN only)
 # — no message is ever sent. Skips entirely when enable_email_notification
 # is false, since notify_results.yml is never launched in that case either.
 ---

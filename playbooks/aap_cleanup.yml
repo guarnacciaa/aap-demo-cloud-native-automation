@@ -74,7 +74,8 @@
         - "Azure - Schedule Runbook"
         - "AWS - Run SSM document and collect output"
         - "AWS - Schedule SSM via maintenance window"
-        - "Notify - Email automation results"
+        - "Notify - Azure automation results"
+        - "Notify - AWS automation results"
         # Dry-run / preview templates (see group_vars/all/job_templates.yml) —
         # listed explicitly so `--tags templates` cleans them up without
         # requiring the organization delete below to cascade-remove them.
