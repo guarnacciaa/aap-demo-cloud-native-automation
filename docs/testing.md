@@ -47,14 +47,14 @@ Tracks testing progress for this demo. Update after each session. For procedural
 | Setup - AWS SSM resources | Pass | 2026-06-25 | Tested via WF - Demo setup |
 | Teardown - Azure runbook | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-25, `failed=0 ok=10` |
 | Teardown - AWS SSM resources | Pass | 2026-06-25 | `failed=0 ok=16 changed=10`; end-to-end pass as AAP job template |
-| Azure - Run Runbook and collect output | Partial | 2026-07-24 | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0`. Further changed 2026-07-23 (Error stream diagnostics) and 2026-07-24 (positional-to-named parameter resolution). Live run against bring-your-own Python runbook `crif-rb-patching-aks` failed twice: first `declares 0 parameter(s)` (Python runbooks never expose declared parameters), then `IndexError` on `sys.argv[1]` after the first fix (bracketed `"[PARAMETER N]"` keys were silently dropped by Azure). Corrected same day to plain `"paramN"` keys — see Open issues. Not yet re-run through the job template with the corrected key format. Further changed 2026-07-27: values are now coerced to string for Python runbooks (only supported input type) — see Open issues |
-| Azure - Schedule Runbook | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0`. Further changed 2026-07-24 with the same positional-to-named parameter resolution as Azure - Run Runbook above, plus the same-day Python-runbook key fix (applied by analogy to the `jobSchedules` API, unverified); not yet run live — see Open issues. Further changed 2026-07-27 with the same string-coercion fix as Azure - Run Runbook above |
+| Azure - Run Runbook and collect output | Partial | 2026-07-27 | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0`. Further changed 2026-07-23 (Error stream diagnostics) and 2026-07-24 (positional-to-named parameter resolution). Live run against bring-your-own Python runbook `crif-rb-patching-aks` sent an empty `parameters: {}` in the actual PUT body despite `azure_runbook_parameter_values` resolving correctly one task earlier — root cause found and fixed 2026-07-27: `azure_runbook_parameters` was being `set_fact`-reassigned, but it is also a job-template extra_var, whose precedence permanently beats `set_fact` for the rest of the play. Renamed the internal working variable to `azure_runbook_effective_parameters` — see Open issues. Not yet re-run live with this fix |
+| Azure - Schedule Runbook | Not tested | — | Logic changed for azure_auth_mode (SP/MSI token branch); default service_principal path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0`. Further changed 2026-07-24 with the same positional-to-named parameter resolution as Azure - Run Runbook above; not yet run live. Further changed 2026-07-27 with the same `azure_runbook_effective_parameters` extra_vars-precedence fix as Azure - Run Runbook above — see Open issues |
 | AWS - Run SSM document and collect output | Not tested | — | Logic changed 2026-07-22: aws_ssm_target_instance_id made optional (InstanceId now built via aws_ssm_all_parameters, combined with new aws_ssm_document_parameters); default instance-based path not yet re-verified. Last known-good run (pre-change): 2026-06-22, `failed=0` |
 | AWS - Schedule SSM via maintenance window | Not tested | — | Logic changed 2026-07-22: --targets now conditional on aws_ssm_target_instance_id; new --task-invocation-parameters branch for aws_ssm_document_parameters is UNTESTED (AWS CLI shorthand syntax not yet verified against a live document). Last known-good run (pre-change): 2026-06-22, `failed=0 changed=1` |
 | Notify - Email automation results | Not tested | — | Extended 2026-07-23 to include per-cloud status (`azure_runbook_status`, `aws_ssm_status`), Azure error stream details, and a dynamic SUCCESS/FAILURE subject; not yet run live — see Open issues |
 | Azure - Connectivity check (dry run) | Not tested | — | New job template |
 | Azure - Permissions check (dry run) | Not tested | — | New job template |
-| Azure - Runbook preview (dry run) | Not tested | — | New job template. Extended 2026-07-24 to report the runbook's declared parameters (name/type/position/mandatory) and, when `azure_runbook_parameter_values` is set, preview the positional-to-name mapping without starting a job; further extended same day so Python runbooks report the positional mapping instead of a misleading "none declared", then corrected same day from bracketed `"[PARAMETER N]"` placeholder keys to plain `"paramN"` (see Open issues); not yet run live. Report text extended 2026-07-27 to mention the Python String-only value-type constraint |
+| Azure - Runbook preview (dry run) | Not tested | — | New job template. Extended 2026-07-24 to report the runbook's declared parameters (name/type/position/mandatory) and, when `azure_runbook_parameter_values` is set, preview the positional-to-name mapping without starting a job; further extended same day so Python runbooks report the positional mapping instead of a misleading "none declared" (see Open issues); not yet run live. Report text extended 2026-07-27 to mention the Python String-only value-type constraint. Not affected by the 2026-07-27 extra_vars-precedence bug fixed in the other two Azure job templates, since it never reassigns `azure_runbook_parameters` (it does not even accept it as an input, only `azure_runbook_parameter_values`) |
 | AWS - Connectivity check (dry run) | Not tested | — | New job template; logic also changed 2026-07-22 to skip the instance check when aws_ssm_target_instance_id is empty |
 | AWS - Permissions check (dry run) | Not tested | — | New job template; requires iam:SimulatePrincipalPolicy on the caller's own ARN |
 | AWS - SSM preview (dry run) | Not tested | — | New job template; logic also changed 2026-07-22 to skip the instance check and report aws_ssm_all_parameters when aws_ssm_target_instance_id is empty |
@@ -74,36 +74,47 @@ Tracks testing progress for this demo. Update after each session. For procedural
 
 ## Open issues
 
-- **2026-07-27**: Found and fixed a second, more fundamental cause of the same "Azure runbook
-  does not receive parameters" symptom tracked in the two entries directly below (both still
-  unverified live at the time this fix landed). Microsoft's own documentation
-  ([Configure runbook input parameters](https://learn.microsoft.com/en-us/azure/automation/runbook-input-parameters),
-  "Input types" table) states that **Python is the only runbook type whose supported
-  parameter input type list is a single entry, `String`** — PowerShell/Workflow/Graphical
-  additionally accept `Boolean`, `INT32`, `DateTime`, `Array`, `Hashtable`. Neither
-  `azure_runbook_run.yml` nor `azure_runbook_schedule.yml` enforced this: a value surviving
-  as a native YAML boolean/integer (for example an unquoted `demo_variables.yml`/extra_vars
-  value, or a non-text Survey field) would reach the ARM API as a native JSON type inside
-  `properties.parameters`, which — matching the same "`properties.parameters: {}` persisted"
-  symptom already seen with the bracketed-key issue below — the API may accept while silently
-  dropping the whole `parameters` object instead of rejecting just that one value. Fixed by
-  adding a "Coerce parameter values to string for Python runbooks" task to
-  `azure_runbook_run.yml` and `azure_runbook_schedule.yml`, applied after the parameters dict
-  is finalized regardless of whether `azure_runbook_parameters` or
-  `azure_runbook_parameter_values` was used; `azure_runbook_preview.yml`'s report was also
-  updated to mention the constraint. This also surfaced a related gap: `azure_runbook_is_python`
-  was previously only computed when `azure_runbook_parameter_values` was set, so both the
-  coercion and the Python-runbook detection itself silently never applied when an operator
-  passed `azure_runbook_parameters` directly by name — both playbooks now always fetch the
-  runbook definition and detect its type, regardless of which parameter-passing mode is used.
-  The `dict2items`/`zip`/`dict` round-trip used to rebuild the parameters dict with
-  stringified values was unit-verified locally outside of AAP (a throwaway `ansible-playbook`
-  test play): a mixed `{string, boolean, integer}` input dict was correctly converted to an
-  all-`str`-typed dict with the same keys/order (`{"param1": "some-string", "param2": "True",
-  "param3": "42"}`), and all three playbooks still pass `ansible-playbook --syntax-check`.
-  **Not yet re-run live** against `crif-rb-patching-aks` or any other Python runbook — this
-  remains open until confirmed end-to-end, in addition to (not instead of) the two issues
-  below, which this fix does not supersede.
+- **2026-07-27 (root cause found — supersedes the two entries below)**: A live run of
+  `Azure - Run Runbook and collect output` against `crif-rb-patching-aks` with
+  `azure_runbook_parameter_values` set to 4 real values showed the "Build the named
+  parameters dictionary from positional values" task correctly reporting the resolved
+  4-entry dict in its own result — yet the final `PUT` request body sent to the ARM API
+  (visible directly in the `uri` task's own returned `invocation.module_args.body`) had
+  `"parameters": {}`, and the created job's `properties.parameters` was `{}` too. Root
+  cause: **`azure_runbook_parameters` is also a job-template extra_var** (see
+  `group_vars/all/job_templates.yml`, always included, defaulting to `{}` per
+  `demo_variables.yml.example`), and in Ansible, **extra_vars have the highest precedence
+  of any variable source, higher than `set_fact`, permanently for the rest of the play**.
+  `azure_runbook_run.yml`/`azure_runbook_schedule.yml` used `set_fact: azure_runbook_parameters:
+  ...` to build the resolved dict from positional values — this appears to succeed (the
+  `set_fact` task's own result echoes the freshly computed dict, which is what misled
+  earlier debugging), but every *later* task referencing `azure_runbook_parameters` —
+  including the final `PUT` body — still resolved to the original extra_var value (`{}`),
+  never the fact. This was reproduced locally in isolation with a throwaway
+  `ansible-playbook` test matching the real task sequence: supplying
+  `azure_runbook_parameters: {}` and `azure_runbook_parameter_values` with 4 values via
+  `-e` reproduced the exact symptom (a debug task right after the `set_fact` step showed
+  `{}`, matching the live job), and removing `azure_runbook_parameters` from the reassignment
+  target fixed it. Fixed by renaming the internal working variable from
+  `azure_runbook_parameters` to `azure_runbook_effective_parameters` in both playbooks —
+  a name that is never an extra_var — for every task from the positional/explicit resolution
+  step through the final request body; `azure_runbook_parameters` itself is now only ever
+  *read*, never reassigned. This also fixes the same-day Python String-only coercion step
+  and the 2026-07-24 positional-to-named resolution feature, both of which were silently
+  defeated by this same precedence trap since they were introduced — **the bracketed-key
+  hypothesis and the Python String-type hypothesis from the two entries below were both
+  red herrings**: the parameters dict sent to Azure was empty regardless of key format or
+  value type, because it was empty before serialization even began. Re-verified locally end
+  to end with a mock of the full task sequence (Retrieve definition → Detect Python →
+  Extract names → Validate count → Compute effective parameters → Coerce to string → build
+  simulated PUT body): the simulated body now correctly carries all 4 parameter values in
+  both the positional-values mode and the explicit-dict mode. All three playbooks
+  (`azure_runbook_run.yml`, `azure_runbook_schedule.yml`, `azure_runbook_preview.yml`, the
+  last unaffected since it never reassigns `azure_runbook_parameters`) still pass
+  `ansible-playbook --syntax-check`. **Not yet re-run live against a real Automation
+  Account** — re-run `Azure - Run Runbook and collect output` against `crif-rb-patching-aks`
+  before considering this closed; if it now succeeds, the two entries below can be marked
+  resolved as a side effect of this fix rather than independently re-verified.
 - **2026-07-24**: Corrected the Python-runbook parameter key format from the entry directly
   below (same day). After the `"[PARAMETER N]"` fix landed, a live run against
   `crif-rb-patching-aks` still failed with `IndexError: list index out of range` on

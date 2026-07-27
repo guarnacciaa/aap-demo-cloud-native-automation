@@ -207,10 +207,23 @@
         - azure
         - schedule
 
-    - name: Build the named parameters dictionary from positional values
+    # IMPORTANT: this must never set_fact back into "azure_runbook_parameters"
+    # itself — see the identical comment in azure_runbook_run.yml for the
+    # full rationale. That name is also a job-template extra_var (defaulting
+    # to {} in demo_variables.yml.example), and extra_vars have permanent,
+    # higher-than-set_fact precedence for the whole play: a set_fact task
+    # that reassigns it appears to succeed (its own result echoes the
+    # freshly computed value) but every later task referencing that name
+    # still resolves to the original extra_var, not the fact. Writing to a
+    # distinct name (azure_runbook_effective_parameters) sidesteps this.
+    - name: Compute the effective parameters dictionary for this run
       ansible.builtin.set_fact:
-        azure_runbook_parameters: "{{ dict(azure_runbook_parameter_names | zip(azure_runbook_parameter_values)) }}"
-      when: azure_runbook_parameter_values | length > 0
+        azure_runbook_effective_parameters: >-
+          {{
+            dict(azure_runbook_parameter_names | zip(azure_runbook_parameter_values))
+            if (azure_runbook_parameter_values | length > 0)
+            else (azure_runbook_parameters | default({}))
+          }}
       no_log: "{{ demo_no_log | default(false) }}"
       tags:
         - azure
@@ -224,11 +237,11 @@
     # job cannot silently lose its parameters the same way a direct run could.
     - name: Coerce parameter values to string for Python runbooks (only supported input type)
       ansible.builtin.set_fact:
-        azure_runbook_parameters: >-
+        azure_runbook_effective_parameters: >-
           {{
             dict(
-              (azure_runbook_parameters | dict2items | map(attribute='key') | list)
-              | zip(azure_runbook_parameters | dict2items | map(attribute='value') | map('string') | list)
+              (azure_runbook_effective_parameters | dict2items | map(attribute='key') | list)
+              | zip(azure_runbook_effective_parameters | dict2items | map(attribute='value') | map('string') | list)
             )
           }}
       when: azure_runbook_is_python | default(false)
@@ -256,7 +269,7 @@
               name: "{{ azure_job_schedule_name }}-schedule"
             runbook:
               name: "{{ azure_runbook_name }}"
-            parameters: "{{ azure_runbook_parameters | default({}) }}"
+            parameters: "{{ azure_runbook_effective_parameters | default({}) }}"
         status_code:
           - 200
           - 201

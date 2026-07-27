@@ -188,10 +188,32 @@
         - azure
         - run
 
-    - name: Build the named parameters dictionary from positional values
+    # IMPORTANT: this must never set_fact back into "azure_runbook_parameters"
+    # itself. That name is also a job-template extra_var (see
+    # group_vars/all/job_templates.yml and demo_variables.yml.example, which
+    # defaults it to {}) — extra_vars have the highest, PERMANENT precedence
+    # in Ansible, higher than set_fact, for the entire play. A set_fact task
+    # that reassigns an extra_var-sourced name appears to succeed (its own
+    # "ansible_facts" result echoes the freshly computed value) but every
+    # LATER task that references that name still resolves to the original
+    # extra_var value, not the fact. This was confirmed live: with
+    # azure_runbook_parameter_values supplying 4 real values, "Build the
+    # named parameters dictionary" reported the correct dict, yet the next
+    # task down and the final PUT body both saw {} again — because
+    # azure_runbook_parameters was always present as an extra_var (defaulting
+    # to {}) alongside it. Writing to a distinct name
+    # (azure_runbook_effective_parameters) instead sidesteps this entirely.
+    # Covers both parameter-passing modes unconditionally: falls back to the
+    # explicit azure_runbook_parameters dict when no positional values were
+    # supplied, so a bare "{{ }}"-templated {} default still resolves cleanly.
+    - name: Compute the effective parameters dictionary for this run
       ansible.builtin.set_fact:
-        azure_runbook_parameters: "{{ dict(azure_runbook_parameter_names | zip(azure_runbook_parameter_values)) }}"
-      when: azure_runbook_parameter_values | length > 0
+        azure_runbook_effective_parameters: >-
+          {{
+            dict(azure_runbook_parameter_names | zip(azure_runbook_parameter_values))
+            if (azure_runbook_parameter_values | length > 0)
+            else (azure_runbook_parameters | default({}))
+          }}
       no_log: "{{ demo_no_log | default(false) }}"
       tags:
         - azure
@@ -206,18 +228,14 @@
     # boolean/integer surviving from an unquoted demo_variables.yml value, or
     # a non-text Survey field type) risks the API silently accepting the
     # request while dropping the whole parameters object rather than
-    # rejecting just that one value — matching the "properties.parameters: {}
-    # persisted" symptom seen in earlier live testing (see docs/testing.md).
-    # Coerce every value to a string here so this cannot happen, regardless
-    # of whether azure_runbook_parameters or azure_runbook_parameter_values
-    # was used above.
+    # rejecting just that one value.
     - name: Coerce parameter values to string for Python runbooks (only supported input type)
       ansible.builtin.set_fact:
-        azure_runbook_parameters: >-
+        azure_runbook_effective_parameters: >-
           {{
             dict(
-              (azure_runbook_parameters | dict2items | map(attribute='key') | list)
-              | zip(azure_runbook_parameters | dict2items | map(attribute='value') | map('string') | list)
+              (azure_runbook_effective_parameters | dict2items | map(attribute='key') | list)
+              | zip(azure_runbook_effective_parameters | dict2items | map(attribute='value') | map('string') | list)
             )
           }}
       when: azure_runbook_is_python | default(false)
@@ -242,7 +260,7 @@
           properties:
             runbook:
               name: "{{ azure_runbook_name }}"
-            parameters: "{{ azure_runbook_parameters | default({}) }}"
+            parameters: "{{ azure_runbook_effective_parameters | default({}) }}"
         status_code:
           - 200
           - 201
