@@ -266,6 +266,12 @@ smtp_port: 587
 smtp_username: notifier@example.com
 # smtp_password is mapped from vault at the top of this file.
 notification_to: ops@example.com
+# Defaults to smtp_username: community.general.mail otherwise defaults the
+# 'sender' (from) address to the bare string "root", which most relays
+# reject with "553 Domain required for sender address". Override only if the
+# relay allows sending as a different display-from address than the
+# authenticated smtp_username mailbox.
+notification_from: "{{ smtp_username }}"
 # Used by both notify_results.yml (secure: starttls) and the
 # Notify - SMTP preflight check (dry run) job template. Set to false only
 # for a relay that never uses STARTTLS on this port.

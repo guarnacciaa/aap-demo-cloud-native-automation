@@ -131,6 +131,11 @@ controller_templates:
       smtp_host: "{{ smtp_host }}"
       smtp_port: "{{ smtp_port }}"
       notification_to: "{{ notification_to }}"
+      # Explicit mail 'sender'; defaults to smtp_username in
+      # demo_variables.yml.example. See the comment there for why an explicit
+      # sender is required (community.general.mail otherwise defaults to the
+      # bare string "root", which relays reject).
+      notification_from: "{{ notification_from }}"
       smtp_use_tls: "{{ smtp_use_tls | default(true) }}"
       demo_no_log: "{{ demo_no_log }}"
     labels:

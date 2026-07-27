@@ -66,6 +66,14 @@
         port: "{{ smtp_port | int }}"
         username: "{{ smtp_username }}"
         password: "{{ smtp_password }}"
+        # community.general.mail defaults 'sender' (aliased 'from') to the
+        # literal string "root" when not set, which most real relays reject
+        # with "553 Domain required for sender address" since it has no
+        # domain part. smtp_username is already a full mailbox address
+        # injected at runtime by the SMTP Credentials credential, so it is a
+        # safe default; notification_from lets operators override it with a
+        # distinct display-from address if the relay allows send-as.
+        sender: "{{ notification_from | default(smtp_username) }}"
         to: "{{ notification_to }}"
         subject: >-
           AAP multicloud automation results —

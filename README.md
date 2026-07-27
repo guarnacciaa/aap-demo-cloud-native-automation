@@ -259,6 +259,7 @@ Child inventory names carry the artifact suffix (not the bare `Azure-Resources` 
 | `Notify - SMTP preflight check (dry run)` fails on port reachability | SMTP host/port blocked by firewall, or wrong port for the provider | Confirm `smtp_host`/`smtp_port` and that egress on that port is allowed |
 | `Notify - SMTP preflight check (dry run)` fails on authentication | Wrong `smtp_username`/`vault_smtp_password`, or STARTTLS required but `smtp_use_tls: false` | Verify credentials; most providers require `smtp_use_tls: true` on port 587 |
 | `Notify - SMTP preflight check (dry run)` fails with `CERTIFICATE_VERIFY_FAILED: Hostname mismatch` | The relay's certificate CN/SAN does not match `smtp_host` (common when reaching it through a load balancer or internal DNS alias) | Confirm this is expected (not a misconfigured `smtp_host`); if so, set `smtp_validate_certs: false` — `notify_results.yml`'s actual send path never validates this either, so the precheck is only being brought in line with it |
+| `Notify - Email automation results` fails with `smtplib.SMTPSenderRefused: (553, ..., 'root')` | `notification_from` is unset and `smtp_username` is also missing, so `community.general.mail` fell back to its own default sender of the bare string `root`, which the relay rejects for lacking a domain | Set `notification_from` (or ensure `smtp_username` is a full mailbox address) in `demo_variables.yml` and re-apply CasC |
 
 ## Reset
 
