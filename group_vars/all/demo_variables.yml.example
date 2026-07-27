@@ -142,6 +142,28 @@ aws_ssm_target_instance_id: ""
 # Required when the document's target is not an EC2 instance, e.g.:
 #   aws_ssm_document_parameters:
 #     - "ClusterName=my-eks-cluster"
+#
+# Another common real-world shape: a patch/AMI-update Automation document
+# that selects its targets by TAG (TagKey/TagValue) instead of a single
+# InstanceId — leave aws_ssm_target_instance_id above empty ("") in this
+# case, since the document itself resolves the instance(s) to act on. Values
+# below are illustrative; replace every CHANGE_ME with the values from your
+# own document's Description/Input parameters page in the AWS console
+# (System Manager Automation execution documents are self-documenting there):
+#   aws_ssm_document_parameters:
+#     - "operation=Install"                              # required: Install or Scan
+#     - "AutomationAssumeRole=arn:aws:iam::CHANGE_ME:role/CHANGE_ME"  # required
+#     - "TagKey=CHANGE_ME"                                # required: tag key identifying targets
+#     - "TagValue=CHANGE_ME"                               # required: tag value identifying targets
+#     - "NoReboot=false"                                   # required: true/false as a string
+#     - "BackupImage=true"                                 # required: true/false as a string
+#     - "preInstallHookDocName=AWS-Noop"                   # required: use AWS-Noop when unused
+#     - "postInstallHookDocName=AWS-Noop"                  # required: use AWS-Noop when unused
+#     - "onExitHookDocName=AWS-Noop"                       # required: use AWS-Noop when unused
+#     - "SnsTopicArn=arn:aws:sns:CHANGE_ME:CHANGE_ME:CHANGE_ME"  # optional: SNS notifications
+#     - "SnsTopicArnRegion=CHANGE_ME"                       # optional: required if SnsTopicArn is set
+#     - "TargetRegion=CHANGE_ME"                            # optional: region to copy the resulting AMI to
+#     - "snapshotId=CHANGE_ME"                              # optional: patch baseline snapshot ID
 aws_ssm_document_parameters: []
 
 # --- AWS SSM maintenance window ---
